@@ -63,7 +63,7 @@ fi
 # 监控界面：配置 [web].enabled=true 且镜像里装了 FastAPI 才启动。
 # ------------------------------------------------------------
 web_enabled() {
-    /opt/stream-archive/venv/bin/python -c "import fastapi, uvicorn" >/dev/null 2>&1 || return 1
+    python3 -c "import fastapi, uvicorn" >/dev/null 2>&1 || return 1
     python3 - <<'PY' 2>/dev/null
 import sys
 import tomllib

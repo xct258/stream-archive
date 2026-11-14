@@ -113,9 +113,10 @@ else
 fi
 
 # ------------------------------------------------------------
-# 3. 本项目：安装到独立 venv
-#    不碰 Debian 的 python3-xxx 包，避免 pip 因缺少 RECORD 无法卸载
-#    同时保留 config.example.toml，供 once.sh 首次启动时复制。
+# 3. 本项目：直接安装到系统 Python
+#    Debian 的 python3-xxx 包没有 pip RECORD，直接升级会报
+#    uninstall-no-record-file；--ignore-installed 让 pip 覆盖到
+#    /usr/local，不卸载 Debian 包。
 # ------------------------------------------------------------
 repo="${APP_REPO:?APP_REPO 未配置}"
 ref="${APP_REF:-main}"
@@ -131,36 +132,28 @@ if [ -z "$pkg_dir" ]; then
     exit 1
 fi
 
-VENV=/opt/stream-archive/venv
-echo "[custom] 创建 venv: ${VENV}"
-python3 -m venv "$VENV"
-VENV_PIP="${VENV}/bin/pip"
-
-echo "[custom] 升级 venv 内的 pip/setuptools/wheel"
-"$VENV_PIP" install --no-cache-dir --disable-pip-version-check \
-    --upgrade pip setuptools wheel
+pip_args=(--no-cache-dir --disable-pip-version-check --ignore-installed)
+if ls /usr/lib/python3*/EXTERNALLY-MANAGED >/dev/null 2>&1; then
+    pip_args+=(--break-system-packages)
+fi
 
 echo "[custom] 安装 stream-archive"
-"$VENV_PIP" install --no-cache-dir --disable-pip-version-check "$pkg_dir"
+python3 -m pip install "${pip_args[@]}" "$pkg_dir"
 
 mkdir -p /opt/stream-archive
 cp "${pkg_dir}/config.example.toml" /opt/stream-archive/config.example.toml
-
-# 把入口脚本链接到 /usr/local/bin，services.sh 按 PATH 调用
-for command in stream-archive stream-archive-web stream-archive-asr stream-archive-recorder; do
-    ln -sf "${VENV}/bin/${command}" "/usr/local/bin/${command}"
-done
 
 # 构建期自检：命令能启动即认为安装成功
 stream-archive --help >/dev/null
 
 # ------------------------------------------------------------
 # 4. 内置 ASR（可选）
+#    使用兼容 faster-whisper 1.2.1 的 av 18.1.0（av 19 移除了参数）
 # ------------------------------------------------------------
 if [ "${INSTALL_ASR:-false}" = "true" ]; then
     echo "[custom] 安装 faster-whisper..."
-    "$VENV_PIP" install --no-cache-dir --disable-pip-version-check \
-        "faster-whisper==1.2.1" "huggingface-hub<2" "av==13.1.0"
+    python3 -m pip install "${pip_args[@]}" \
+        "faster-whisper==1.2.1" "huggingface-hub<2" "av==18.1.0"
     echo "[custom] faster-whisper 安装完成"
 else
     echo "[custom] INSTALL_ASR=false，跳过 faster-whisper"
@@ -171,7 +164,7 @@ fi
 # ------------------------------------------------------------
 if [ "${INSTALL_WEB:-false}" = "true" ]; then
     echo "[custom] 安装监控界面依赖..."
-    "$VENV_PIP" install --no-cache-dir --disable-pip-version-check \
+    python3 -m pip install "${pip_args[@]}" \
         "fastapi>=0.110,<1" "uvicorn>=0.27,<1"
     echo "[custom] FastAPI/uvicorn 安装完成"
 else

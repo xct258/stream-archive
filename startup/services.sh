@@ -2,8 +2,10 @@
 # ============================================================
 # 项目专属：声明要启动的进程
 #
-#   watcher：常驻监控录制目录，录制结束自动处理
-#   sync   ：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次
+#   recorder：录播姬（镜像默认安装，启动前自动生成/更新 config.json）
+#   watcher ：常驻监控录制目录，录制结束自动处理
+#   sync    ：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次
+#   web     ：监控界面（可选）
 #
 # 语音转文本不常驻：转写时由 stream-archive 启动一次性 worker，完成即退出。
 #
@@ -27,6 +29,35 @@ start_sync() {
         done
     '
 }
+
+# ------------------------------------------------------------
+# 录播姬：镜像默认安装，配置 [recorder].enabled=true 时启动。
+# 启动器会先按 config.toml 生成/更新录播姬的 config.json。
+# ------------------------------------------------------------
+recorder_enabled() {
+    [ -x /opt/bililive/recorder/BililiveRecorder.Cli ] || return 1
+    python3 - <<'PY' 2>/dev/null
+import sys
+import tomllib
+from pathlib import Path
+
+try:
+    config = tomllib.loads(Path("/data/config.toml").read_text(encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+
+sys.exit(0 if config.get("recorder", {}).get("enabled", True) else 1)
+PY
+}
+
+if recorder_enabled; then
+    SERVICE_NAMES=(recorder "${SERVICE_NAMES[@]}")
+    SERVICE_STOP_TIMEOUT[recorder]=15
+
+    start_recorder() {
+        run_service recorder stream-archive-recorder --config /data/config.toml
+    }
+fi
 
 # ------------------------------------------------------------
 # 监控界面：配置 [web].enabled=true 且镜像里装了 FastAPI 才启动。

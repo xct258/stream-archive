@@ -176,6 +176,20 @@ def cmd_check(config: Config, logger) -> int:
             logger.error("❌ 找不到 %s", command)
             errors += 1
 
+    if config.recorder.enabled:
+        binary = Path(
+            os.environ.get(
+                "RECORDER_BIN", "/opt/bililive/recorder/BililiveRecorder.Cli"
+            )
+        )
+        if binary.is_file() and os.access(binary, os.X_OK):
+            logger.info("✅ 录播姬已安装：%s", binary)
+        else:
+            logger.error(
+                "❌ 未安装录播姬（构建镜像时 INSTALL_RECORDER=true）：%s", binary
+            )
+            errors += 1
+
     if config.web.enabled:
         probe = subprocess.run(
             [sys.executable, "-c", "import fastapi, uvicorn"],
@@ -219,8 +233,7 @@ def cmd_check(config: Config, logger) -> int:
                 )
                 errors += 1
 
-        if streamer.room_id is not None and not config.recorder.config_path.is_file():
-            logger.warning("⚠️ 录播姬配置不存在，sync 会跳过：%s", config.recorder.config_path)
+
 
     # 目录可写检查：真正写一个临时文件，比只看权限位可靠
     for directory in (

@@ -233,14 +233,41 @@ stream-archive --config /data/config.toml sync
 stream-archive --config /data/config.toml check
 ```
 
-容器里 `services.sh` 启动了两个进程：
+容器里 `services.sh` 启动以下进程：
 
-- `watcher`：常驻监控；
+- `recorder`：录播姬（默认安装，启动前自动生成/更新配置）；
+- `watcher`：常驻监控录制目录；
 - `sync`：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次；
 - `web`：监控界面（配置 `[web].enabled=true` 且镜像装了 FastAPI 时启动）。
 
 镜像内置 `fonts-noto-cjk`，默认 `[danmaku].font_name = "Noto Sans CJK SC"`；
 如果直接在宿主机运行，需要自行安装中文字体，或在配置里换成已有字体。
+
+## 录播姬（默认安装）
+
+镜像默认安装 BililiveRecorder。第一次启动时 `stream-archive-recorder` 会：
+
+- 根据 `[[streamers]].room_id` 生成/更新 `<recorder.work_dir>/config.json`；
+- 写入录制 cookies；
+- 打开自动录制、弹幕/礼物录制；
+- 校正文件名模板；
+- 配置留空时生成管理面板密码到 `<work_dir>/.http_password`。
+
+```toml
+[recorder]
+enabled = true
+work_dir = "/data/rec"
+http_bind = "http://127.0.0.1:2356"
+http_user = "admin"
+http_password = ""          # 留空自动生成
+record_cookie_json = "/data/cookies/bilibili/cookies-录播账号.json"
+```
+
+- 录制输出：`/data/rec/video/<录播姬昵称>/<日期>/`
+- `watch.source_folders` 默认 `/data/rec`，会递归找到上面的目录；
+- 管理面板默认只绑 `127.0.0.1:2356`，建议用 nginx 反代并加认证；
+- 修改房间号后，`sync` 会更新 `config.json`，但录播姬进程需要重启才会加载新房间（`docker compose restart`）；
+- 镜像构建时 `INSTALL_RECORDER=true`（默认）会下载录播姬；`RECORDER_VERSION` 可固定版本。
 
 ## 监控界面（M1）
 
@@ -323,7 +350,8 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 `install/`、`startup/`、`template/` 遵循 `xct258/docker-image-template`：
 
 - `install/app.conf` 配置镜像名、架构、apt 依赖；
-- `install/custom-install.sh` 下载 DanmakuFactory、biliup，并用 `APP_REPO/APP_REF` 安装本项目；
+- `install/custom-install.sh` 下载 BililiveRecorder、DanmakuFactory、biliup，并用 `APP_REPO/APP_REF` 安装本项目；
+- `INSTALL_RECORDER=true`（默认）安装录播姬；录播姬启动时由本项目生成/更新配置；
 - `INSTALL_ASR=true`（默认）时额外安装 faster-whisper，提供内置语音转文本；设为 `false` 可减小镜像；
 - `INSTALL_WEB=true`（默认）时安装 FastAPI/uvicorn，提供监控界面；设为 `false` 可减小镜像；
 - `startup/*.sh` 负责每次启动、首次初始化、服务声明；
@@ -336,6 +364,6 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 - 只出投稿版；高能进度条是叠加在投稿版上的可选项，不做单独的预览版；
 - 不做 rclone 视频备份、在线切片；
 - 内置 ASR 的转写速度取决于 CPU/GPU 和模型大小，长录播可能较慢；
-- 录制端（录播姬）需要单独运行，本工具只消费它的输出目录；
+- 录播姬房间/账号变更后需要重启容器，才会让录制进程重新加载配置；
 - WebDAV 只支持 Basic Auth，不支持 Digest / 分块上传；
 - 监控界面 M1 为只读，重试/手动处理等操作在 M2 加入。

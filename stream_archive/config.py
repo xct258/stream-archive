@@ -166,8 +166,23 @@ class WebdavConfig:
 
 @dataclass
 class RecorderConfig:
-    config_path: Path = Path("/data/recorder/config.json")
+    """录播姬进程与配置。"""
+
+    enabled: bool = True
+    # 录播姬的工作目录：config.json 和 video/ 输出都在这里
+    work_dir: Path = Path("/data/rec")
+    # 管理面板地址；默认只绑本机，由 nginx 反代
+    http_bind: str = "http://127.0.0.1:2356"
+    http_user: str = "admin"
+    # 留空时由 recorder 启动器生成到 <work_dir>/.http_password
+    http_password: str = ""
+    # 录制账号 cookies（用于录原画）
     record_cookie_json: Path = Path("/data/cookies/bilibili/cookies-录播账号.json")
+
+    @property
+    def config_path(self) -> Path:
+        """录播姬固定读取 <work_dir>/config.json。"""
+        return self.work_dir / "config.json"
 
 
 @dataclass
@@ -256,6 +271,12 @@ class Config:
             raise ConfigError("web.refresh_seconds 至少为 1")
         if not self.web.host.strip():
             raise ConfigError("web.host 不能为空")
+
+        if self.recorder.enabled:
+            if not self.recorder.http_bind.strip():
+                raise ConfigError("recorder.http_bind 不能为空")
+            if not self.recorder.http_user.strip():
+                raise ConfigError("recorder.http_user 不能为空")
         if not self.streamers:
             raise ConfigError("至少需要配置一个 [[streamers]]")
 
@@ -658,9 +679,13 @@ def load_config(path: Path) -> Config:
 
     recorder_raw = _section(raw, "recorder")
     recorder = RecorderConfig(
-        config_path=_get_path(
-            recorder_raw, "recorder", "config_path", "/data/recorder/config.json"
+        enabled=_get_bool(recorder_raw, "recorder", "enabled", True),
+        work_dir=_get_path(recorder_raw, "recorder", "work_dir", "/data/rec"),
+        http_bind=_get_str(
+            recorder_raw, "recorder", "http_bind", "http://127.0.0.1:2356"
         ),
+        http_user=_get_str(recorder_raw, "recorder", "http_user", "admin"),
+        http_password=_get_str(recorder_raw, "recorder", "http_password", ""),
         record_cookie_json=_get_path(
             recorder_raw,
             "recorder",

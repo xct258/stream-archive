@@ -215,11 +215,20 @@ hf_endpoint = ""
 timeout = 14400
 
 [recorder]
-# 录播姬全局配置文件；sync 命令会把 cookies 和各主播房间同步进去
-# 不使用录播姬时可以保持默认，sync 会跳过
-config_path = "/data/recorder/config.json"
+# 镜像默认安装录播姬并启动；配置由 stream-archive 根据本文件生成/更新
+enabled = true
 
-# 录播姬使用的 cookie JSON（和投稿账号无关）
+# 录播姬工作目录：config.json 和 video/ 输出都在这里
+# watcher 默认扫描 /data/rec，会递归找到 /data/rec/video/<主播>/<日期>/
+work_dir = "/data/rec"
+
+# 管理面板；默认只绑本机，由 nginx 反代。对外暴露请自行加认证。
+http_bind = "http://127.0.0.1:2356"
+http_user = "admin"
+# 留空则首次启动生成随机密码到 <work_dir>/.http_password
+http_password = ""
+
+# 录制账号 cookies（和投稿账号无关），用于录制原画
 record_cookie_json = "/data/cookies/bilibili/cookies-录播账号.json"
 
 

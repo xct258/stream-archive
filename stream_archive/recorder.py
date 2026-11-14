@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .config import Config, ConfigError
 from .log import get_logger
-from .util import atomic_write_bytes, atomic_write_json, read_json
+from .util import atomic_write_bytes, atomic_write_json, ensure_dir, read_json
 
 # 录播姬默认的文件名模板，保证后续解析逻辑一致
 DEFAULT_FILENAME_TEMPLATE = (
@@ -149,60 +149,81 @@ def _md5_file(path: Path) -> str:
 def sync_recorder_config(config: Config, logger=None) -> bool:
     """把 cookies 和房间列表同步到录播姬配置。
 
-    返回 True 表示文件有改动，False 表示已经一致。
+    配置不存在时按 [recorder] 和 [[streamers]] 创建一份，
+    因此容器第一次启动就能直接用。
+    返回 True 表示新建/有改动。
     """
     logger = logger or get_logger("stream_archive.recorder")
+    if not config.recorder.enabled:
+        logger.info("录播姬已禁用，跳过配置同步")
+        return False
+
     config_path = config.recorder.config_path
+    ensure_dir(config_path.parent)
+    created = not config_path.is_file()
 
-    if not config_path.is_file():
-        logger.error("录播姬配置不存在：%s", config_path)
-        return False
-
-    try:
-        recorder_config = read_json(config_path)
-        new_cookie = cookie_string_from_json(config.recorder.record_cookie_json)
-    except (OSError, ValueError, ConfigError) as exc:
-        logger.error("读取配置失败：%s", exc)
-        return False
+    if created:
+        recorder_config = {"version": 3, "global": {}, "rooms": []}
+        logger.info("录播姬配置不存在，创建：%s", config_path)
+    else:
+        try:
+            recorder_config = read_json(config_path)
+        except (OSError, ValueError) as exc:
+            logger.error("读取录播姬配置失败：%s", exc)
+            return False
 
     if not isinstance(recorder_config, dict):
         logger.error("录播姬配置格式不正确：%s", config_path)
         return False
 
+    # cookies 缺失时仍允许创建配置，只是录制原画可能受影响
+    try:
+        new_cookie = cookie_string_from_json(config.recorder.record_cookie_json)
+    except ConfigError as exc:
+        logger.warning("录制 cookies 不可用，先使用空 cookie：%s", exc)
+        new_cookie = ""
+
     global_config = recorder_config.setdefault("global", {})
-    _ensure_global_defaults(global_config)
+    defaults_changed = _ensure_global_defaults(global_config)
 
     # ---- cookie ----
-    cookie_node = global_config.setdefault("Cookie", {"HasValue": True, "Value": ""})
-    existing = normalize_cookie(str(cookie_node.get("Value", "") or ""))
-    canonical = normalize_cookie(new_cookie)
-    cookie_changed = existing != canonical
-    if cookie_changed:
-        cookie_node["HasValue"] = True
-        cookie_node["Value"] = canonical
+    cookie_node = global_config["Cookie"]
+    cookie_changed = False
+    if new_cookie:
+        existing = normalize_cookie(str(cookie_node.get("Value", "") or ""))
+        canonical = normalize_cookie(new_cookie)
+        cookie_changed = existing != canonical
+        if cookie_changed:
+            cookie_node["HasValue"] = True
+            cookie_node["Value"] = canonical
 
     # ---- 房间 ----
     rooms_changed = _ensure_rooms(recorder_config, config)
 
-    if not cookie_changed and not rooms_changed:
+    changed = created or defaults_changed or cookie_changed or rooms_changed
+    if not changed:
         logger.info("录播姬配置已是最新，无需修改")
         return False
 
     atomic_write_json(config_path, recorder_config)
     logger.info(
-        "录播姬配置已更新（cookies %s，房间 %s）",
+        "录播姬配置%s（cookies %s，房间 %s）：%s",
+        "已创建" if created else "已更新",
         "有变化" if cookie_changed else "无变化",
         "有变化" if rooms_changed else "无变化",
+        config_path,
     )
     return True
 
 
-def _ensure_global_defaults(global_config: dict) -> None:
-    """补齐录制弹幕、礼物、文件名模板等必需开关。"""
+def _ensure_global_defaults(global_config: dict) -> bool:
+    """补齐录制弹幕、礼物、文件名模板、Cookie 节点，返回是否有改动。"""
+    changed = False
     for key in ("RecordDanmaku", "RecordDanmakuGift"):
         node = global_config.get(key)
         if not isinstance(node, dict) or node.get("Value") is not True:
             global_config[key] = {"HasValue": True, "Value": True}
+            changed = True
 
     template = global_config.get("FileNameRecordTemplate")
     if not isinstance(template, dict) or not template.get("Value"):
@@ -210,6 +231,13 @@ def _ensure_global_defaults(global_config: dict) -> None:
             "HasValue": True,
             "Value": DEFAULT_FILENAME_TEMPLATE,
         }
+        changed = True
+
+    if not isinstance(global_config.get("Cookie"), dict):
+        global_config["Cookie"] = {"HasValue": True, "Value": ""}
+        changed = True
+
+    return changed
 
 
 def _ensure_rooms(recorder_config: dict, config: Config) -> bool:

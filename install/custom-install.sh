@@ -82,6 +82,37 @@ install -m 755 "$bili_bin" /usr/local/bin/biliup
 echo "[custom] biliup 安装完成"
 
 # ------------------------------------------------------------
+# 2.1 BililiveRecorder（默认安装）
+#     release 资产名：BililiveRecorder-CLI-linux-x64.zip / linux-arm64.zip
+# ------------------------------------------------------------
+if [ "${INSTALL_RECORDER:-true}" = "true" ]; then
+    case "$target_arch" in
+        amd64) br_arch=x64 ;;
+        arm64) br_arch=arm64 ;;
+        *)
+            echo "[custom] 录播姬不支持架构: ${target_arch}" >&2
+            exit 1
+            ;;
+    esac
+
+    if [ -n "${RECORDER_VERSION:-}" ]; then
+        br_base="https://github.com/BililiveRecorder/BililiveRecorder/releases/download/${RECORDER_VERSION}"
+    else
+        br_base="https://github.com/BililiveRecorder/BililiveRecorder/releases/latest/download"
+    fi
+    br_url="${br_base}/BililiveRecorder-CLI-linux-${br_arch}.zip"
+    echo "[custom] 下载录播姬: ${br_url}"
+    curl -fsSL --retry 3 --retry-delay 5 -o "${tmp}/br.zip" "$br_url"
+    rm -rf /opt/bililive/recorder
+    mkdir -p /opt/bililive/recorder
+    unzip -q -o "${tmp}/br.zip" -d /opt/bililive/recorder
+    chmod +x /opt/bililive/recorder/BililiveRecorder.Cli
+    echo "[custom] 录播姬安装完成"
+else
+    echo "[custom] INSTALL_RECORDER=false，跳过录播姬"
+fi
+
+# ------------------------------------------------------------
 # 3. 本项目
 #    从 GitHub 下载指定引用的源码，pip 安装到系统 Python。
 #    同时保留 config.example.toml，供 once.sh 首次启动时复制。

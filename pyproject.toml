@@ -26,6 +26,7 @@ asr = [
 stream-archive = "stream_archive.__main__:main"
 stream-archive-asr = "stream_archive.asr_worker:main"
 stream-archive-web = "stream_archive.web:main"
+stream-archive-recorder = "stream_archive.recorder_launcher:main"
 
 [tool.setuptools]
 packages = ["stream_archive", "stream_archive.webui"]

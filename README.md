@@ -3,7 +3,7 @@
 通用直播录播处理工具：**录制监控 → 碎片清理 → FLV→MP4 → 弹幕压制 → B 站投稿 → 按月合集 → 归档 → 弹幕上云 → 按天清理**。
 
 - **通用多主播**：主播、房间号、投稿账号、标题/简介模板全部在 `config.toml` 里配置，代码里不出现具体主播；
-- **可恢复**：每场录播拆成 10 个幂等步骤，状态写入 JSON，失败后可以断点重试；
+- **可恢复**：每场录播拆成 11 个幂等步骤，状态写入 JSON，失败后可以断点重试；
 - **零第三方 Python 依赖**：只用 3.11+ 标准库；外部依赖是 ffmpeg、DanmakuFactory、biliup；
 - **容器化**：基于 `xct258/docker-image-template` 构建多架构镜像，配置和启动逻辑与模板一致。
 
@@ -32,6 +32,7 @@
 | `upload` | biliup 投稿，自动标题、简介、封面、标签 |
 | `append_monthly` | 同一主播同月的视频归到一个月稿件（首场新建，后续追加分P） |
 | `archive` | 压制版 / 原文件按 `主播/年/月/日` 归档 |
+| `transcribe` | 从原视频抽音频，调用 ASR 服务生成 txt/srt |
 | `upload_danmaku` | XML 弹幕上传 WebDAV |
 | `cleanup_after` | 可选：投稿成功后删除本地文件 |
 
@@ -169,6 +170,40 @@ progress_bar_smooth = 60      # 平滑窗口（秒）
 [streamers.encode]
 progress_bar = true
 ```
+
+## 语音转文本（可选）
+
+从归档的原视频里抽一条 16kHz 单声道音轨，提交给 ASR 服务，结果保存为同名的 `.txt` / `.srt`：
+
+```toml
+[asr]
+enabled = true
+backend = "http"
+server = "http://127.0.0.1:8286"
+api_key = ""              # 需要时作为 Bearer Token
+device = "auto"           # auto / cuda / cpu
+poll_interval = 5
+timeout = 7200            # 单场最长等待时间
+path_map_from = ""        # 服务端与本工具挂载不同时做前缀替换
+path_map_to = ""
+```
+
+兼容协议（旧版 Whisper 服务）：
+
+```
+POST /submit_task            {"audio_path": "...", "device": "auto"}
+GET  /task_status/{task_id}
+GET  /task_file/{task_id}    {"filename": "...", "content": "..."}
+```
+
+说明：
+
+- ASR 服务不在本镜像里，需要单独部署；只要实现上面的协议即可；
+- 音频提取为 16kHz 单声道 AAC，4 小时约 115MB；
+- 服务在原音频旁边生成同名 `.txt` / `.srt`；本工具也会在 txt 缺失时用 `/task_file` 兜底；
+- 服务端路径和本地不一致时，用 `path_map_from` / `path_map_to` 做前缀替换；
+- 开启语音转文本后，`delete_after_upload` 会跳过删除，避免把 txt/srt 一起删掉；
+- 失败会让任务停在 `transcribe`，`retry` 会复用已提取的音频。
 
 ## 弹幕上传 WebDAV
 

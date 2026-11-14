@@ -28,6 +28,7 @@ from .media import (
     probe,
     remux_to_mp4,
 )
+from .asr import step_transcribe
 from .monthly import step_append_monthly
 from .progress_bar import build_images
 from .state import (
@@ -60,6 +61,7 @@ STEPS = (
     "upload",
     "append_monthly",
     "archive",
+    "transcribe",
     "upload_danmaku",
     "cleanup_after",
 )
@@ -250,6 +252,7 @@ def process_job(config: Config, job: Job, logger=None) -> bool:
         "upload": step_upload,
         "append_monthly": step_append_monthly,
         "archive": step_archive,
+        "transcribe": step_transcribe,
         "upload_danmaku": step_upload_danmaku,
         "cleanup_after": step_cleanup_after,
     }
@@ -714,6 +717,10 @@ def step_cleanup_after(
     """投稿成功后按配置删除本地文件。"""
     if not streamer.archive.delete_after_upload:
         return "未启用“投稿后删除”，保留本地文件", True
+
+    # 开了语音转写时保留本地文件，避免把 txt/srt 一起删掉
+    if streamer.asr.enabled:
+        return "已启用语音转文本，保留本地文件（含 txt/srt）", True
 
     upload_info = job.outputs.get("upload") or {}
     append_info = job.outputs.get("append") or {}

@@ -34,6 +34,10 @@ enabled = true
 url = "https://pan.example.com/dav"
 path = "/弹幕/{streamer}/{date}"
 
+[asr]
+enabled = false
+server = "http://127.0.0.1:8286"
+
 [[streamers]]
 id = "a"
 name = "主播A"
@@ -51,6 +55,9 @@ enabled = true
 
 [streamers.webdav]
 only_appended = true
+
+[streamers.asr]
+enabled = true
 
 [[streamers]]
 id = "b"
@@ -99,6 +106,11 @@ class ConfigTest(unittest.TestCase):
         self.assertTrue(a.webdav.only_appended)
         self.assertFalse(b.webdav.only_appended)
         self.assertEqual(a.webdav.url, "https://pan.example.com/dav")
+
+        # 语音转文本：a 开启，b 继承全局默认（关闭）
+        self.assertTrue(a.asr.enabled)
+        self.assertFalse(b.asr.enabled)
+        self.assertEqual(a.asr.server, "http://127.0.0.1:8286")
 
         # 高能进度条：a 开启，b 继承全局默认（关闭）
         self.assertTrue(a.encode.progress_bar)

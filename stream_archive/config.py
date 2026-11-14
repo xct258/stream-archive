@@ -112,6 +112,29 @@ class AppendConfig:
 
 
 @dataclass
+class AsrConfig:
+    """语音转文本：把原视频的音频提交给 ASR 服务。
+
+    默认兼容旧版 Whisper 服务的协议：
+        POST /submit_task            {"audio_path": "...", "device": "auto"}
+        GET  /task_status/{task_id}
+        GET  /task_file/{task_id}
+    服务在原音频旁边生成同名 .txt / .srt。
+    """
+
+    enabled: bool = False
+    backend: str = "http"
+    server: str = "http://127.0.0.1:8286"
+    api_key: str = ""
+    device: str = "auto"
+    poll_interval: int = 5
+    timeout: int = 7200
+    # 本地路径 -> 服务端路径的前缀替换；服务端和本工具不在同一挂载时使用
+    path_map_from: str = ""
+    path_map_to: str = ""
+
+
+@dataclass
 class WebdavConfig:
     """WebDAV：把 XML 弹幕文件上传到网盘。
 
@@ -182,6 +205,7 @@ class StreamerConfig:
     archive: ArchiveConfig = field(default_factory=ArchiveConfig)
     append: AppendConfig = field(default_factory=AppendConfig)
     webdav: WebdavConfig = field(default_factory=WebdavConfig)
+    asr: AsrConfig = field(default_factory=AsrConfig)
 
     def matches(self, raw_name: str) -> bool:
         """录制文件名里的主播名是否属于这个主播。"""
@@ -243,6 +267,7 @@ class Config:
             _validate_archive(streamer.archive, streamer.id)
             _validate_append(streamer.append, streamer.id)
             _validate_webdav(streamer.webdav, streamer.id)
+            _validate_asr(streamer.asr, streamer.id)
 
 
 def _validate_danmaku(config: DanmakuConfig, owner: str) -> None:
@@ -285,6 +310,21 @@ def _validate_append(config: AppendConfig, owner: str) -> None:
         raise ConfigError(f"{owner}.append.source 只能是 raw 或 pressed")
     if config.enabled and not config.title_template:
         raise ConfigError(f"{owner}.append.title_template 不能为空")
+
+
+def _validate_asr(config: AsrConfig, owner: str) -> None:
+    if not config.enabled:
+        return
+    if config.backend != "http":
+        raise ConfigError(f"{owner}.asr.backend 目前只支持 http")
+    if not config.server.strip():
+        raise ConfigError(f"{owner}.asr.server 不能为空")
+    if config.poll_interval <= 0:
+        raise ConfigError(f"{owner}.asr.poll_interval 必须大于 0")
+    if config.timeout <= 0:
+        raise ConfigError(f"{owner}.asr.timeout 必须大于 0")
+    if bool(config.path_map_from) != bool(config.path_map_to):
+        raise ConfigError(f"{owner}.asr.path_map_from 和 path_map_to 必须同时设置")
 
 
 def _validate_webdav(config: WebdavConfig, owner: str) -> None:
@@ -466,6 +506,20 @@ def _parse_append(section: dict[str, Any], label: str) -> AppendConfig:
     )
 
 
+def _parse_asr(section: dict[str, Any], label: str) -> AsrConfig:
+    return AsrConfig(
+        enabled=_get_bool(section, label, "enabled", False),
+        backend=_get_str(section, label, "backend", "http"),
+        server=_get_str(section, label, "server", "http://127.0.0.1:8286"),
+        api_key=_get_str(section, label, "api_key", ""),
+        device=_get_str(section, label, "device", "auto"),
+        poll_interval=_get_int(section, label, "poll_interval", 5),
+        timeout=_get_int(section, label, "timeout", 7200),
+        path_map_from=_get_str(section, label, "path_map_from", ""),
+        path_map_to=_get_str(section, label, "path_map_to", ""),
+    )
+
+
 def _parse_webdav(section: dict[str, Any], label: str) -> WebdavConfig:
     return WebdavConfig(
         enabled=_get_bool(section, label, "enabled", False),
@@ -490,6 +544,7 @@ def _parse_streamers(
     default_archive: dict[str, Any],
     default_append: dict[str, Any],
     default_webdav: dict[str, Any],
+    default_asr: dict[str, Any],
 ) -> list[StreamerConfig]:
     if not isinstance(raw_streamers, list):
         raise ConfigError("[[streamers]] 必须是数组")
@@ -532,6 +587,10 @@ def _parse_streamers(
                 webdav=_parse_webdav(
                     _merge(default_webdav, item.get("webdav"), f"{label}.webdav"),
                     f"{label}.webdav",
+                ),
+                asr=_parse_asr(
+                    _merge(default_asr, item.get("asr"), f"{label}.asr"),
+                    f"{label}.asr",
                 ),
             )
         )
@@ -621,6 +680,7 @@ def load_config(path: Path) -> Config:
     default_archive = _section(raw, "archive")
     default_append = _section(raw, "append")
     default_webdav = _section(raw, "webdav")
+    default_asr = _section(raw, "asr")
 
     streamers = _parse_streamers(
         raw.get("streamers", []),
@@ -630,6 +690,7 @@ def load_config(path: Path) -> Config:
         default_archive,
         default_append,
         default_webdav,
+        default_asr,
     )
 
     config = Config(

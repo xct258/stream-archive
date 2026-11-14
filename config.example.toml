@@ -186,6 +186,24 @@ insecure = false
 timeout = 60
 
 
+[asr]
+# 语音转文本：从原视频抽音频，提交给 ASR 服务，结果保存为同名 txt/srt。
+# 默认兼容旧版 Whisper 服务：POST /submit_task、GET /task_status/{id}、GET /task_file/{id}
+enabled = false
+backend = "http"
+server = "http://127.0.0.1:8286"
+# 服务需要鉴权时填写，作为 Bearer Token
+api_key = ""
+# 传给服务的设备参数：auto / cuda / cpu
+device = "auto"
+poll_interval = 5
+# 单场任务最长等待时间（秒）
+timeout = 7200
+# 服务端与本工具不在同一挂载时，做路径前缀替换（必须成对设置）
+path_map_from = ""
+path_map_to = ""
+
+
 [recorder]
 # 录播姬全局配置文件；sync 命令会把 cookies 和各主播房间同步进去
 # 不使用录播姬时可以保持默认，sync 会跳过
@@ -249,6 +267,9 @@ tags = ["直播回放"]
 # [streamers.webdav]
 # enabled = true
 # path = "/danmaku/{streamer}/{date}"
+#
+# [streamers.asr]
+# enabled = true
 
 
 # ------------------------------------------------------------

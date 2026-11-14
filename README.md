@@ -207,6 +207,9 @@ stream-archive --config /data/config.toml check
 - `watcher`：常驻监控；
 - `sync`：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次。
 
+镜像内置 `fonts-noto-cjk`，默认 `[danmaku].font_name = "Noto Sans CJK SC"`；
+如果直接在宿主机运行，需要自行安装中文字体，或在配置里换成已有字体。
+
 ## 状态与日志
 
 - 任务状态：`/data/state/jobs/<主播id>-<时间>.json`
@@ -222,6 +225,14 @@ python3 -m stream_archive --help
 ```
 
 测试全部离线运行：用假 ffmpeg / biliup 和本地 `http.server` 覆盖流水线、按月投稿、WebDAV，不需要真实视频和网络。
+
+生成模拟录播（真实视频 + 弹幕 XML）：
+
+```bash
+python3 scripts/make_test_media.py --output /tmp/demo-media
+```
+
+默认生成两段（60 秒 + 30 秒）、1280x720@30 的 FLV 和对应的中文弹幕 XML，可以直接用 `once --dir` 跑完整流水线。
 
 ## 构建说明
 

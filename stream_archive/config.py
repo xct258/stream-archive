@@ -50,6 +50,7 @@ class WatchConfig:
 class DanmakuConfig:
     enabled: bool = True
     factory: Path = Path("/usr/local/bin/DanmakuFactory")
+    font_name: str = "Noto Sans CJK SC"
     font_size: int = 50
     opacity: int = 200
     max_diff_seconds: int = 25
@@ -398,6 +399,7 @@ def _parse_danmaku(section: dict[str, Any], label: str) -> DanmakuConfig:
     return DanmakuConfig(
         enabled=_get_bool(section, label, "enabled", True),
         factory=_get_path(section, label, "factory", "/usr/local/bin/DanmakuFactory"),
+        font_name=_get_str(section, label, "font_name", "Noto Sans CJK SC"),
         font_size=_get_int(section, label, "font_size", 50),
         opacity=_get_int(section, label, "opacity", 200),
         max_diff_seconds=_get_int(section, label, "max_diff_seconds", 25),

@@ -1,9 +1,9 @@
 """高能进度条：把弹幕密度曲线叠到画面底部。
 
 设计：
-    - 纯 Python 生成一张 PPM 图片（P6），不依赖 matplotlib / Pillow；
+    - 纯 Python 生成三张 PPM 图片（P6），不依赖 matplotlib / Pillow；
     - 横轴是整场时长，纵轴是平滑后的弹幕密度；
-    - ffmpeg overlay 到画面底部，再用 drawbox 把未播放区域压暗、画一条播放头。
+    - ffmpeg overlay 到画面底部，再用黑色遮罩压暗未播放区域、白色竖线画播放头。
 
 这样只需要一张图片，不需要为整场视频生成几千帧 PNG，
 4 小时的录播也只占几百 KB 临时空间。

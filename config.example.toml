@@ -51,6 +51,10 @@ enabled = true
 # DanmakuFactory 可执行文件（镜像里会装到 /usr/local/bin）
 factory = "/usr/local/bin/DanmakuFactory"
 
+# 弹幕字体；镜像里安装的是 Noto Sans CJK SC
+# 留空则使用 DanmakuFactory 默认的 Microsoft YaHei（Linux 上可能缺字）
+font_name = "Noto Sans CJK SC"
+
 # ASS 弹幕样式：字号和不透明度（0-255，255 为完全不透明）
 font_size = 50
 opacity = 200

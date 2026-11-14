@@ -70,18 +70,19 @@ def xml_to_ass(xml_path: Path, config: DanmakuConfig) -> Path:
         config.opacity,
     )
 
-    result = subprocess.run(
-        [
-            str(factory),
-            "-i", str(xml_path),
-            "-o", str(ass_path),
-            "-S", str(config.font_size),   # 字号
-            "-O", str(config.opacity),     # 不透明度 0-255
-            "--ignore-warnings",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    command = [
+        str(factory),
+        "-i", str(xml_path),
+        "-o", str(ass_path),
+        "-S", str(config.font_size),   # 字号
+        "-O", str(config.opacity),     # 不透明度 0-255
+    ]
+    # 指定字体，避免 ASS 默认的 Microsoft YaHei 在 Linux 上回退成缺字字体
+    if config.font_name.strip():
+        command += ["-N", config.font_name.strip()]
+    command.append("--ignore-warnings")
+
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "").strip()[-500:]
         raise DanmakuError(f"弹幕转换失败：{xml_path.name}\n{tail}")

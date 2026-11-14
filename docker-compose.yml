@@ -1,0 +1,27 @@
+services:
+  app:
+    # 与 install/app.conf 的 IMAGE_REPO/IMAGE_TAG 保持一致
+    image: xct258/stream-archive:latest
+    container_name: stream-archive
+    # 默认 host 网络；本项目不需要监听端口，保持默认即可
+    network_mode: host
+    restart: unless-stopped
+    # 多进程容器用 tini 回收孤儿进程
+    init: true
+    # ffmpeg 压制可能正在跑，停止时多给一点时间
+    stop_grace_period: 90s
+    environment:
+      TZ: Asia/Shanghai
+      # 日志目录（log.sh 写入；挂载 /data 后随数据卷保留）
+      LOG_BASE_DIR: /data/logs
+      # 启动时检查更新：本项目随镜像更新，保持默认关闭即可
+      # UPDATE_ON_START: 0
+      # 额外加入 PATH 的目录
+      # EXTRA_PATH_DIRS: /opt/tools/bin
+    volumes:
+      # 配置、状态、归档、日志都放在这里
+      - ./data:/data
+      # 录制源目录按实际路径挂载到 /data/rec（与 config.toml 的 source_folders 对应）
+      # - /path/to/recordings:/data/rec
+      # 需要单独的大容量归档盘时，可以把 /data/videos 换成独立挂载：
+      # - /path/to/archive:/data/videos

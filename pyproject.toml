@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stream-archive"
+version = "0.1.0"
+description = "通用直播录制处理：录制监控、弹幕压制、B站投稿、按月合集、WebDAV 弹幕归档"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "xct258" }]
+# 运行时零第三方依赖：tomllib（3.11+）、argparse、logging、urllib 均来自标准库。
+dependencies = []
+
+[project.scripts]
+stream-archive = "stream_archive.__main__:main"
+
+[tool.setuptools]
+packages = ["stream_archive"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

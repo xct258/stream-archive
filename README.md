@@ -184,6 +184,18 @@ api_key = ""              # 需要时作为 Bearer Token
 device = "auto"           # auto / cuda / cpu
 poll_interval = 5
 timeout = 7200            # 单场最长等待时间
+
+# 使用镜像内置的 faster-whisper 服务
+embedded = false
+host = "127.0.0.1"
+port = 8286
+model = "large-v3-turbo"  # tiny / base / small / medium / large-v3 / large-v3-turbo
+language = "zh"
+compute_type = "auto"     # auto / cpu / cuda
+model_dir = "/data/asr/models"
+beam_size = 5
+hf_endpoint = ""          # 国内可填 https://hf-mirror.com
+
 path_map_from = ""        # 服务端与本工具挂载不同时做前缀替换
 path_map_to = ""
 ```
@@ -198,7 +210,11 @@ GET  /task_file/{task_id}    {"filename": "...", "content": "..."}
 
 说明：
 
-- ASR 服务不在本镜像里，需要单独部署；只要实现上面的协议即可；
+- `embedded = true` 时使用镜像内置的 faster-whisper 服务（构建时 `INSTALL_ASR=true`，默认开启），启动时自动运行 `stream-archive-asr`；
+- `embedded = false` 时可以指向外部服务，只要实现上面的协议即可；
+- 模型不打进镜像，首次转写时下载到 `model_dir`（`large-v3-turbo` 约 1.6GB）；也可以提前把模型放进去；
+- 国内下载慢可以设置 `hf_endpoint = "https://hf-mirror.com"`；
+- 如果修改了 `port`，客户端的 `server` 也要改成同样的端口；
 - 音频提取为 16kHz 单声道 AAC，4 小时约 115MB；
 - 服务在原音频旁边生成同名 `.txt` / `.srt`；本工具也会在 txt 缺失时用 `/task_file` 兜底；
 - 服务端路径和本地不一致时，用 `path_map_from` / `path_map_to` 做前缀替换；
@@ -275,6 +291,7 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 
 - `install/app.conf` 配置镜像名、架构、apt 依赖；
 - `install/custom-install.sh` 下载 DanmakuFactory、biliup，并用 `APP_REPO/APP_REF` 安装本项目；
+- `INSTALL_ASR=true`（默认）时额外安装 faster-whisper，提供内置语音转文本；设为 `false` 可减小镜像；
 - `startup/*.sh` 负责每次启动、首次初始化、服务声明；
 - `template/` 是固定模板文件，构建时从当前仓库按提交 SHA 下载。
 
@@ -283,6 +300,7 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 ## 已知限制
 
 - 只出投稿版；高能进度条是叠加在投稿版上的可选项，不做单独的预览版；
-- 不做 rclone 视频备份、音频提取、语音识别、在线切片；
+- 不做 rclone 视频备份、在线切片；
+- 内置 ASR 的转写速度取决于 CPU/GPU 和模型大小，长录播可能较慢；
 - 录制端（录播姬）需要单独运行，本工具只消费它的输出目录；
 - WebDAV 只支持 Basic Auth，不支持 Digest / 分块上传。

@@ -133,6 +133,18 @@ class AsrConfig:
     path_map_from: str = ""
     path_map_to: str = ""
 
+    # 内置 ASR 服务（镜像里安装 faster-whisper 后可用）
+    embedded: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8286
+    model: str = "large-v3-turbo"
+    language: str = "zh"
+    compute_type: str = "auto"
+    model_dir: Path = Path("/data/asr/models")
+    beam_size: int = 5
+    # HuggingFace 镜像地址，例如 https://hf-mirror.com；留空使用官方
+    hf_endpoint: str = ""
+
 
 @dataclass
 class WebdavConfig:
@@ -325,6 +337,12 @@ def _validate_asr(config: AsrConfig, owner: str) -> None:
         raise ConfigError(f"{owner}.asr.timeout 必须大于 0")
     if bool(config.path_map_from) != bool(config.path_map_to):
         raise ConfigError(f"{owner}.asr.path_map_from 和 path_map_to 必须同时设置")
+    if not 1 <= config.port <= 65535:
+        raise ConfigError(f"{owner}.asr.port 必须在 1-65535 之间")
+    if config.beam_size < 1:
+        raise ConfigError(f"{owner}.asr.beam_size 至少为 1")
+    if not config.model.strip():
+        raise ConfigError(f"{owner}.asr.model 不能为空")
 
 
 def _validate_webdav(config: WebdavConfig, owner: str) -> None:
@@ -517,6 +535,15 @@ def _parse_asr(section: dict[str, Any], label: str) -> AsrConfig:
         timeout=_get_int(section, label, "timeout", 7200),
         path_map_from=_get_str(section, label, "path_map_from", ""),
         path_map_to=_get_str(section, label, "path_map_to", ""),
+        embedded=_get_bool(section, label, "embedded", False),
+        host=_get_str(section, label, "host", "127.0.0.1"),
+        port=_get_int(section, label, "port", 8286),
+        model=_get_str(section, label, "model", "large-v3-turbo"),
+        language=_get_str(section, label, "language", "zh"),
+        compute_type=_get_str(section, label, "compute_type", "auto"),
+        model_dir=_get_path(section, label, "model_dir", "/data/asr/models"),
+        beam_size=_get_int(section, label, "beam_size", 5),
+        hf_endpoint=_get_str(section, label, "hf_endpoint", ""),
     )
 
 

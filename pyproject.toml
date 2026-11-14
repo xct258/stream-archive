@@ -15,6 +15,7 @@ dependencies = []
 
 [project.scripts]
 stream-archive = "stream_archive.__main__:main"
+stream-archive-asr = "stream_archive.asr_server:main"
 
 [tool.setuptools]
 packages = ["stream_archive"]

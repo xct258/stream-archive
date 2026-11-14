@@ -14,6 +14,7 @@ mkdir -p \
     /data/logs \
     /data/rec \
     /data/recorder \
+    /data/asr/models \
     /data/cookies/bilibili
 
 log info "数据目录就绪"

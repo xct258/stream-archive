@@ -112,4 +112,20 @@ cp "${pkg_dir}/config.example.toml" /opt/stream-archive/config.example.toml
 
 # 构建期自检：命令能启动即认为安装成功
 stream-archive --help >/dev/null
+
+# ------------------------------------------------------------
+# 4. 内置 ASR（可选）
+#    INSTALL_ASR=true 时安装 faster-whisper；模型在首次转写时下载。
+#    标记文件供 startup/services.sh 判断镜像里是否真的有 ASR 能力。
+# ------------------------------------------------------------
+if [ "${INSTALL_ASR:-false}" = "true" ]; then
+    echo "[custom] 安装 faster-whisper..."
+    python3 -m pip install "${pip_args[@]}" "faster-whisper==1.2.1" "huggingface-hub<2"
+    touch /opt/stream-archive/.asr-installed
+    echo "[custom] faster-whisper 安装完成"
+else
+    rm -f /opt/stream-archive/.asr-installed
+    echo "[custom] INSTALL_ASR=false，跳过 faster-whisper"
+fi
+
 echo "[custom] 自定义安装全部完成"

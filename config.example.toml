@@ -199,6 +199,23 @@ device = "auto"
 poll_interval = 5
 # 单场任务最长等待时间（秒）
 timeout = 7200
+
+# 使用镜像内置的 faster-whisper 服务（构建时 install/app.conf 的 INSTALL_ASR=true）
+# 开启后 services.sh 会启动 stream-archive-asr，server 保持下面的默认地址即可
+embedded = false
+host = "127.0.0.1"
+port = 8286
+# 模型：tiny / base / small / medium / large-v3 / large-v3-turbo
+# 模型不在镜像里，首次转写时下载到 model_dir
+model = "large-v3-turbo"
+language = "zh"
+# auto / cpu / cuda；auto 时 CUDA 用 float16，CPU 用 int8
+compute_type = "auto"
+model_dir = "/data/asr/models"
+beam_size = 5
+# HuggingFace 镜像，国内可填 https://hf-mirror.com；留空走官方
+hf_endpoint = ""
+
 # 服务端与本工具不在同一挂载时，做路径前缀替换（必须成对设置）
 path_map_from = ""
 path_map_to = ""

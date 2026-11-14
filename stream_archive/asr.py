@@ -200,7 +200,7 @@ def collect_outputs(
 
     # 服务端返回的路径如果本地可访问（共享挂载），复制到音频旁边
     for key, local_path in (("txt_file", txt_path), ("srt_file", srt_path)):
-        if local_path.is_file() and local_path.stat().st_size > 0:
+        if local_path.is_file():
             continue
         remote_value = result.get(key)
         if remote_value:
@@ -209,7 +209,7 @@ def collect_outputs(
                 local_path.write_bytes(candidate.read_bytes())
 
     # txt 还没有：用 /task_file 接口取内容
-    if not txt_path.is_file() or txt_path.stat().st_size == 0:
+    if not txt_path.is_file():
         try:
             payload = _request_json(
                 f"{config.server.rstrip('/')}/task_file/{task_id}",
@@ -217,13 +217,14 @@ def collect_outputs(
                 timeout=60,
             )
             content = payload.get("content")
-            if isinstance(content, str) and content.strip():
+            if isinstance(content, str):
                 txt_path.write_text(content, encoding="utf-8")
         except AsrError as exc:
             logger.warning("获取 ASR 文本失败：%s", exc)
 
-    txt_ok = txt_path.is_file() and txt_path.stat().st_size > 0
-    srt_ok = srt_path.is_file() and srt_path.stat().st_size > 0
+    # 空文件也算有效结果：整场没人说话时转写结果就是空文本
+    txt_ok = txt_path.is_file()
+    srt_ok = srt_path.is_file()
     if not txt_ok and not srt_ok:
         raise AsrError(f"ASR 任务 {task_id} 完成，但没有找到 txt/srt 结果")
 

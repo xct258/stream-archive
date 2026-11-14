@@ -181,6 +181,7 @@ def remux_to_mp4(src: Path, dst: Path) -> None:
     run(
         [
             FFMPEG,
+            "-nostdin",
             "-fflags", "+genpts",
             "-i", str(src),
             "-c:v", "copy",
@@ -260,6 +261,7 @@ def extract_frame(video: Path, timestamp: float, output: Path) -> bool:
     result = run(
         [
             FFMPEG,
+            "-nostdin",
             "-ss", f"{timestamp:.3f}",
             "-i", str(video),
             "-frames:v", "1",
@@ -280,6 +282,7 @@ def frame_brightness(image: Path) -> float | None:
     result = run(
         [
             FFMPEG,
+            "-nostdin",
             "-v", "error",
             "-i", str(image),
             "-vf", "signalstats,metadata=print:file=-",

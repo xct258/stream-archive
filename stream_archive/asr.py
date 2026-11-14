@@ -44,6 +44,7 @@ def extract_audio(video: Path, output: Path) -> Path:
     run(
         [
             FFMPEG,
+            "-nostdin",
             "-hide_banner",
             "-loglevel", "error",
             "-y",

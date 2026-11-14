@@ -125,6 +125,7 @@ def make_video(
 
     command = [
         "ffmpeg",
+        "-nostdin",
         "-v", "error",
         "-f", "lavfi",
         "-i", f"testsrc2=size={width}x{height}:rate={fps}:duration={duration}",

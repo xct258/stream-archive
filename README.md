@@ -278,6 +278,29 @@ stream-archive-web --config /data/config.toml
 - 进程日志：`/data/logs/service/watcher.log`、`sync.log`、`web.log`
 - 归档：`/data/videos/<主播>/压制版|原文件/YYYY/MM/YYYY-MM-DD/`
 
+## 本地安装（不用 Docker）
+
+```bash
+git clone https://github.com/xct258/stream-archive.git
+cd stream-archive
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[web,asr]"
+```
+
+- `[web]`：FastAPI + uvicorn，监控界面；
+- `[asr]`：faster-whisper + 固定 `av==13.1.0`（新版本 av 移除了 faster-whisper 1.2.1 使用的参数）；
+- 只查看界面可以只装 `.[web]`；
+- ffmpeg 用系统包；DanmakuFactory / biliup 放到 `bin/` 或 PATH，在 config 里指向；
+- ASR 模型不打进镜像/仓库，首次转写时下载到 `[asr].model_dir`。
+
+启动：
+
+```bash
+stream-archive-web --config config.toml
+```
+
 ## 本地开发与测试
 
 ```bash

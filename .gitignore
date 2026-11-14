@@ -4,3 +4,8 @@ __pycache__/
 *.egg-info/
 config.toml
 data/
+bin/
+.venv/
+local-test/
+build/
+dist/

@@ -8,13 +8,19 @@ version = "0.1.0"
 description = "通用直播录制处理：录制监控、弹幕压制、B站投稿、按月合集、WebDAV 弹幕归档"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "xct258" }]
 # 运行时零第三方依赖：tomllib（3.11+）、argparse、logging、urllib 均来自标准库。
 dependencies = []
 
 [project.optional-dependencies]
 web = ["fastapi>=0.110", "uvicorn>=0.27"]
+asr = [
+  "faster-whisper==1.2.1",
+  "huggingface-hub<2",
+  # faster-whisper 1.2.1 仍在使用 av 19 已移除的 metadata_errors 参数
+  "av==13.1.0",
+]
 
 [project.scripts]
 stream-archive = "stream_archive.__main__:main"
@@ -22,10 +28,10 @@ stream-archive-asr = "stream_archive.asr_worker:main"
 stream-archive-web = "stream_archive.web:main"
 
 [tool.setuptools]
-packages = ["stream_archive"]
+packages = ["stream_archive", "stream_archive.webui"]
 
 [tool.setuptools.package-data]
-stream_archive = ["webui/*"]
+"stream_archive.webui" = ["*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

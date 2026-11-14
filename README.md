@@ -27,7 +27,7 @@
 | `scan` | 把录制文件搬进缓存目录，删除 `<10MB` 碎片和孤儿 XML |
 | `remux` | FLV → MP4 无损封装 |
 | `duration_check` | 视频时长与最后一条弹幕时间差超过阈值则跳过压制 |
-| `encode` | XML→ASS，ffmpeg 烧弹幕；有核显先试 QSV，失败回退 x264 |
+| `encode` | XML→ASS，ffmpeg 烧弹幕；有核显先试 QSV，失败回退 x264；可选高能进度条 |
 | `cover` | 弹幕峰值处抽帧，自动避开过暗/过曝画面 |
 | `upload` | biliup 投稿，自动标题、简介、封面、标签 |
 | `append_monthly` | 同一主播同月的视频归到一个月稿件（首场新建，后续追加分P） |
@@ -144,6 +144,32 @@ cover = ""                  # 可选封面
 - 映射文件记录 `主播归档名|YYYY-MM=BV号`，重跑不会重复追加；
 - 简介里可用 `{pan_url}`，开启 WebDAV 后自动替换成当月弹幕目录。
 
+## 高能进度条（可选）
+
+在画面底部叠加弹幕密度曲线：
+
+- 已播放区域保持高亮，未播放区域压暗；
+- 白色竖线是播放头，随时间移动；
+- 曲线按秒统计弹幕数，开平方抑制刷屏尖峰，再做滑动平均；
+- 纯 Python 生成三张小图（曲线、遮罩、播放头），不需要 matplotlib/Pillow；
+- 生成失败会自动退化为普通投稿版，不影响任务。
+
+```toml
+[encode]
+progress_bar = true
+progress_bar_height = 64      # 像素，1080p 建议 48-80
+progress_bar_opacity = 0.6    # 0-1
+progress_bar_color = "0x2ED6FF"
+progress_bar_smooth = 60      # 平滑窗口（秒）
+```
+
+单个主播可以单独开启：
+
+```toml
+[streamers.encode]
+progress_bar = true
+```
+
 ## 弹幕上传 WebDAV
 
 ```toml
@@ -210,7 +236,7 @@ python3 -m stream_archive --help
 
 ## 已知限制
 
-- 只出投稿版，不含预览版 / 高能进度条；
+- 只出投稿版；高能进度条是叠加在投稿版上的可选项，不做单独的预览版；
 - 不做 rclone 视频备份、音频提取、语音识别、在线切片；
 - 录制端（录播姬）需要单独运行，本工具只消费它的输出目录；
 - WebDAV 只支持 Basic Auth，不支持 Digest / 分块上传。

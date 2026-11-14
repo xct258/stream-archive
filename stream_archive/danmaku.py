@@ -18,6 +18,7 @@ from pathlib import Path
 from .config import DanmakuConfig, EncodeConfig
 from .log import get_logger
 from .media import FFMPEG, MediaError
+from .progress_bar import BarImages, build_filter
 from .util import human_size
 
 # /dev/dri 存在才可能有 Intel 核显；没有就直接走 CPU，省掉一次必然失败的尝试。
@@ -102,6 +103,7 @@ def encode(
     output: Path,
     encode_config: EncodeConfig,
     duration: float,
+    bar_images: BarImages | None = None,
 ) -> None:
     """把 ASS 弹幕烧进画面，输出投稿版 MP4。
 
@@ -110,7 +112,8 @@ def encode(
         ass_path:      弹幕字幕
         output:        输出文件
         encode_config: 编码参数
-        duration:      视频时长（秒），只用于进度百分比
+        duration:      视频时长（秒），用于进度百分比和进度条定位
+        bar_images:    可选的高能进度条三张图，None 表示不叠加
 
     异常：
         DanmakuError: QSV 和 CPU 都失败
@@ -120,7 +123,9 @@ def encode(
     # 有核显时先试 QSV。速度快很多，但驱动/参数不对会立即失败。
     if encode_config.try_qsv and DRI_PATH.exists():
         logger.info("尝试 Intel QSV 硬件编码")
-        if _run_encode(video, ass_path, output, encode_config, duration, encoder="qsv"):
+        if _run_encode(
+            video, ass_path, output, encode_config, duration, encoder="qsv", bar_images=bar_images
+        ):
             return
         logger.warning("QSV 编码失败，删除半成品并回退 CPU")
         output.unlink(missing_ok=True)
@@ -130,7 +135,9 @@ def encode(
         encode_config.crf,
         encode_config.preset,
     )
-    if not _run_encode(video, ass_path, output, encode_config, duration, encoder="cpu"):
+    if not _run_encode(
+        video, ass_path, output, encode_config, duration, encoder="cpu", bar_images=bar_images
+    ):
         raise DanmakuError(f"视频压制失败：{video.name}")
 
     if not output.is_file() or output.stat().st_size == 0:
@@ -145,6 +152,7 @@ def _run_encode(
     duration: float,
     *,
     encoder: str,
+    bar_images: BarImages | None = None,
 ) -> bool:
     """执行一次 ffmpeg 编码，成功返回 True。
 
@@ -153,6 +161,11 @@ def _run_encode(
         -map "[vout]" -map "0:a?"              输出视频 + 原音频（没有音频也不报错）
         -c:a copy                              音频不重编码，保持原样
         -progress pipe:1                       用机器可读格式输出进度
+
+    高能进度条：
+        额外三路输入是进度条、遮罩、播放头（单帧 PPM），
+        overlay 用 eof_action=repeat 让它们铺满整场；
+        具体滤镜在 progress_bar.build_filter。
     """
     logger = get_logger("stream_archive.danmaku")
 
@@ -163,7 +176,24 @@ def _run_encode(
         "-loglevel", "warning",
         "-y",
         "-i", str(video),
-        "-filter_complex", f"[0:v]ass={escape_filter_path(ass_path)}[vout]",
+    ]
+
+    if bar_images is not None:
+        cmd += [
+            "-i", str(bar_images.bar),
+            "-i", str(bar_images.mask),
+            "-i", str(bar_images.line),
+        ]
+        filter_complex = build_filter(
+            duration,
+            config.progress_bar_opacity,
+            ass_path,
+        )
+    else:
+        filter_complex = f"[0:v]ass={escape_filter_path(ass_path)}[vout]"
+
+    cmd += [
+        "-filter_complex", filter_complex,
         "-map", "[vout]",
         "-map", "0:a?",
     ]

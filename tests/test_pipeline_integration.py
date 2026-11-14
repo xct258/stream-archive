@@ -164,7 +164,7 @@ class PipelineIntegrationTest(unittest.TestCase):
                     name="演示主播",
                     aliases=["别名"],
                     danmaku=DanmakuConfig(factory=self.factory),
-                    encode=EncodeConfig(crf=28, try_qsv=False),
+                    encode=EncodeConfig(crf=28, try_qsv=False, progress_bar=True),
                     upload=UploadConfig(
                         enabled=True,
                         biliup=self.biliup,
@@ -264,6 +264,10 @@ class PipelineIntegrationTest(unittest.TestCase):
 
         # WebDAV 未启用时应显式跳过
         self.assertEqual(job.status_of("upload_danmaku"), "skipped")
+
+        # 高能进度条开启时，压制仍应成功
+        self.assertEqual(job.status_of("encode"), "done")
+        self.assertFalse(list(pressed.glob("bar-*.ppm")))
 
     def test_small_files_are_removed(self) -> None:
         # 追加一个只有 1KB 的碎片，应该被整组清理

@@ -29,6 +29,7 @@ from .media import (
     remux_to_mp4,
 )
 from .monthly import step_append_monthly
+from .progress_bar import build_images
 from .state import (
     Job,
     begin,
@@ -509,15 +510,38 @@ def step_encode(
             failures.append(f"{pair['video']}: 文件缺失")
             continue
 
+        bar_images = None
         try:
             ass_path = xml_to_ass(xml_path, streamer.danmaku)
             output = work_dir / f"投稿版-{video.name}"
             info = probe(video)
-            encode(video, ass_path, output, streamer.encode, info.duration)
+
+            # 可选高能进度条：生成失败不阻塞压制，退化为普通投稿版
+            if streamer.encode.progress_bar:
+                try:
+                    bar_images = build_images(
+                        xml_path,
+                        info.duration,
+                        info.width or 1920,
+                        streamer.encode.progress_bar_height,
+                        streamer.encode.progress_bar_color,
+                        streamer.encode.progress_bar_smooth,
+                        work_dir,
+                        f"bar-{video.stem}",
+                    )
+                except Exception as exc:
+                    logger.warning("高能进度条生成失败，改为无进度条压制：%s", exc)
+                    bar_images = None
+
+            encode(video, ass_path, output, streamer.encode, info.duration, bar_images)
             encoded.append(str(output))
         except Exception as exc:
             logger.error("压制失败：%s（%s）", video.name, exc)
             failures.append(f"{video.name}: {exc}")
+        finally:
+            if bar_images is not None:
+                for path in bar_images.paths():
+                    path.unlink(missing_ok=True)
 
     if not encoded:
         raise RuntimeError("全部视频压制失败：" + "；".join(failures))

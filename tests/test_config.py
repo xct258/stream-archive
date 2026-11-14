@@ -43,6 +43,9 @@ room_id = 1001
 [streamers.danmaku]
 max_diff_seconds = 10
 
+[streamers.encode]
+progress_bar = true
+
 [streamers.append]
 enabled = true
 
@@ -96,6 +99,11 @@ class ConfigTest(unittest.TestCase):
         self.assertTrue(a.webdav.only_appended)
         self.assertFalse(b.webdav.only_appended)
         self.assertEqual(a.webdav.url, "https://pan.example.com/dav")
+
+        # 高能进度条：a 开启，b 继承全局默认（关闭）
+        self.assertTrue(a.encode.progress_bar)
+        self.assertFalse(b.encode.progress_bar)
+        self.assertEqual(a.encode.progress_bar_color, "0x2ED6FF")
 
     def test_matching_and_source_folders(self) -> None:
         config = load_config(self.path)

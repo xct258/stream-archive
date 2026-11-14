@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +64,13 @@ class EncodeConfig:
     try_qsv: bool = True
     qsv_quality: int = 20
     qsv_preset: str = "medium"
+
+    # 可选高能进度条：把弹幕密度曲线叠在画面底部
+    progress_bar: bool = False
+    progress_bar_height: int = 64
+    progress_bar_opacity: float = 0.6
+    progress_bar_color: str = "0x2ED6FF"
+    progress_bar_smooth: int = 60
 
 
 @dataclass
@@ -250,6 +258,18 @@ def _validate_encode(config: EncodeConfig, owner: str) -> None:
         raise ConfigError(f"{owner}.encode.crf 必须在 0-51 之间")
     if config.threads < 0:
         raise ConfigError(f"{owner}.encode.threads 不能为负数")
+    if not config.progress_bar:
+        return
+    if not 8 <= config.progress_bar_height <= 400:
+        raise ConfigError(f"{owner}.encode.progress_bar_height 必须在 8-400 之间")
+    if not 0 <= config.progress_bar_opacity <= 1:
+        raise ConfigError(f"{owner}.encode.progress_bar_opacity 必须在 0-1 之间")
+    if config.progress_bar_smooth < 1:
+        raise ConfigError(f"{owner}.encode.progress_bar_smooth 至少为 1")
+    if not re.fullmatch(r"(0x|#)[0-9A-Fa-f]{6}", config.progress_bar_color):
+        raise ConfigError(
+            f"{owner}.encode.progress_bar_color 必须是 0xRRGGBB 或 #RRGGBB"
+        )
 
 
 def _validate_archive(config: ArchiveConfig, owner: str) -> None:
@@ -340,6 +360,16 @@ def _get_bool(section: dict[str, Any], section_name: str, key: str, default: boo
     return value
 
 
+def _get_float(
+    section: dict[str, Any], section_name: str, key: str, default: float
+) -> float:
+    value = section.get(key, default)
+    # bool 是 int 的子类，要排除；int 可以当 float 用
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{section_name}.{key} 必须是数字")
+    return float(value)
+
+
 def _get_str_list(
     section: dict[str, Any], section_name: str, key: str, default: list[str]
 ) -> list[str]:
@@ -383,6 +413,11 @@ def _parse_encode(section: dict[str, Any], label: str) -> EncodeConfig:
         try_qsv=_get_bool(section, label, "try_qsv", True),
         qsv_quality=_get_int(section, label, "qsv_quality", 20),
         qsv_preset=_get_str(section, label, "qsv_preset", "medium"),
+        progress_bar=_get_bool(section, label, "progress_bar", False),
+        progress_bar_height=_get_int(section, label, "progress_bar_height", 64),
+        progress_bar_opacity=_get_float(section, label, "progress_bar_opacity", 0.6),
+        progress_bar_color=_get_str(section, label, "progress_bar_color", "0x2ED6FF"),
+        progress_bar_smooth=_get_int(section, label, "progress_bar_smooth", 60),
     )
 
 

@@ -78,6 +78,19 @@ try_qsv = true
 qsv_quality = 20
 qsv_preset = "medium"
 
+# ---- 可选高能进度条 ----
+# 在画面底部叠加弹幕密度曲线：已播放区域高亮，未播放区域压暗，白色竖线是播放头。
+# 生成失败会自动退化为无进度条压制，不阻塞任务。
+progress_bar = false
+# 进度条高度（像素）；1080p 建议 48-80
+progress_bar_height = 64
+# 整体不透明度 0-1
+progress_bar_opacity = 0.6
+# 曲线颜色 0xRRGGBB 或 #RRGGBB
+progress_bar_color = "0x2ED6FF"
+# 平滑窗口（秒），越大曲线越平缓
+progress_bar_smooth = 60
+
 
 [upload]
 # 是否投稿到 B 站（单个主播可用 [streamers.upload] 覆盖）
@@ -249,6 +262,7 @@ tags = ["直播回放"]
 #
 # [streamers.encode]
 # crf = 20                 # 该主播单独使用更高的画质
+# progress_bar = true      # 该主播开启高能进度条
 #
 # [streamers.archive]
 # retention_days = 30      # 该主播多保留几天

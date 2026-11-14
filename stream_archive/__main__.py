@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -170,6 +171,20 @@ def cmd_check(config: Config, logger) -> int:
                 errors += 1
             if not streamer.upload.cookies.is_file():
                 logger.error("❌ 投稿 cookies 不存在：%s", streamer.upload.cookies)
+                errors += 1
+
+        if streamer.asr.enabled:
+            probe = subprocess.run(
+                [sys.executable, "-c", "import faster_whisper"],
+                capture_output=True,
+                text=True,
+            )
+            if probe.returncode == 0:
+                logger.info("✅ faster-whisper 已安装")
+            else:
+                logger.error(
+                    "❌ 未安装 faster-whisper（构建镜像时把 install/app.conf 的 INSTALL_ASR 设为 true）"
+                )
                 errors += 1
 
         if streamer.room_id is not None and not config.recorder.config_path.is_file():

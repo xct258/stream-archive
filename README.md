@@ -32,7 +32,7 @@
 | `upload` | biliup 投稿，自动标题、简介、封面、标签 |
 | `append_monthly` | 同一主播同月的视频归到一个月稿件（首场新建，后续追加分P） |
 | `archive` | 压制版 / 原文件按 `主播/年/月/日` 归档 |
-| `transcribe` | 从原视频抽音频，调用 ASR 服务生成 txt/srt |
+| `transcribe` | 从原视频抽音频，启动本地 ASR worker 生成 txt/srt |
 | `upload_danmaku` | XML 弹幕上传 WebDAV |
 | `cleanup_after` | 可选：投稿成功后删除本地文件 |
 
@@ -173,53 +173,32 @@ progress_bar = true
 
 ## 语音转文本（可选）
 
-从归档的原视频里抽一条 16kHz 单声道音轨，提交给 ASR 服务，结果保存为同名的 `.txt` / `.srt`：
+从归档的原视频抽音频，**启动一次性本地 worker** 转写，完成后进程退出、模型释放：
 
 ```toml
 [asr]
 enabled = true
-backend = "http"
-server = "http://127.0.0.1:8286"
-api_key = ""              # 需要时作为 Bearer Token
-device = "auto"           # auto / cuda / cpu
-poll_interval = 5
-timeout = 7200            # 单场最长等待时间
-
-# 使用镜像内置的 faster-whisper 服务
-embedded = false
-host = "127.0.0.1"
-port = 8286
-model = "large-v3-turbo"  # tiny / base / small / medium / large-v3 / large-v3-turbo
+model = "large-v3-turbo"
 language = "zh"
-compute_type = "auto"     # auto / cpu / cuda
+device = "auto"           # auto / cpu / cuda
+compute_type = "auto"     # auto 时 CUDA 用 float16，CPU 用 int8
 model_dir = "/data/asr/models"
 beam_size = 5
 hf_endpoint = ""          # 国内可填 https://hf-mirror.com
-
-path_map_from = ""        # 服务端与本工具挂载不同时做前缀替换
-path_map_to = ""
-```
-
-兼容协议（旧版 Whisper 服务）：
-
-```
-POST /submit_task            {"audio_path": "...", "device": "auto"}
-GET  /task_status/{task_id}
-GET  /task_file/{task_id}    {"filename": "...", "content": "..."}
+timeout = 14400           # worker 单次最长秒数
 ```
 
 说明：
 
-- `embedded = true` 时使用镜像内置的 faster-whisper 服务（构建时 `INSTALL_ASR=true`，默认开启），启动时自动运行 `stream-archive-asr`；
-- `embedded = false` 时可以指向外部服务，只要实现上面的协议即可；
-- 模型不打进镜像，首次转写时下载到 `model_dir`（`large-v3-turbo` 约 1.6GB）；也可以提前把模型放进去；
-- 国内下载慢可以设置 `hf_endpoint = "https://hf-mirror.com"`；
-- 如果修改了 `port`，客户端的 `server` 也要改成同样的端口；
+- 需要镜像构建时 `INSTALL_ASR=true`（默认），安装 faster-whisper；
+- **不启动常驻 HTTP 服务，也不提交到外部服务**；
+- 每场转写启动一个 `stream-archive-asr` 子进程，处理完所有音频后退出，内存/显存自动释放；
 - 音频提取为 16kHz 单声道 AAC，4 小时约 115MB；
-- 服务在原音频旁边生成同名 `.txt` / `.srt`；本工具也会在 txt 缺失时用 `/task_file` 兜底；
-- 服务端路径和本地不一致时，用 `path_map_from` / `path_map_to` 做前缀替换；
-- 开启语音转文本后，`delete_after_upload` 会跳过删除，避免把 txt/srt 一起删掉；
-- 失败会让任务停在 `transcribe`，`retry` 会复用已提取的音频。
+- 结果写同名 `.txt` / `.srt`，保存在「原文件」目录；
+- 模型不打进镜像，首次转写时下载到 `model_dir`；也可以提前放进去；
+- CPU 转写较慢，建议用 GPU 或 `small` / `base` 模型；
+- 失败会让任务停在 `transcribe`，`retry` 会复用已提取的音频；
+- 开启语音转文本后，`delete_after_upload` 会跳过删除，避免把 txt/srt 一起删掉。
 
 ## 弹幕上传 WebDAV
 

@@ -36,7 +36,6 @@ path = "/弹幕/{streamer}/{date}"
 
 [asr]
 enabled = false
-server = "http://127.0.0.1:8286"
 
 [[streamers]]
 id = "a"
@@ -110,7 +109,7 @@ class ConfigTest(unittest.TestCase):
         # 语音转文本：a 开启，b 继承全局默认（关闭）
         self.assertTrue(a.asr.enabled)
         self.assertFalse(b.asr.enabled)
-        self.assertEqual(a.asr.server, "http://127.0.0.1:8286")
+        self.assertEqual(a.asr.model, "large-v3-turbo")
 
         # 高能进度条：a 开启，b 继承全局默认（关闭）
         self.assertTrue(a.encode.progress_bar)

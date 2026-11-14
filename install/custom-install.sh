@@ -148,12 +148,12 @@ stream-archive --help >/dev/null
 
 # ------------------------------------------------------------
 # 4. 内置 ASR（可选）
-#    使用兼容 faster-whisper 1.2.1 的 av 18.1.0（av 19 移除了参数）
+#    使用最新 av；worker 内置了 av 19 的 metadata_errors 兼容层
 # ------------------------------------------------------------
 if [ "${INSTALL_ASR:-false}" = "true" ]; then
     echo "[custom] 安装 faster-whisper..."
     python3 -m pip install "${pip_args[@]}" \
-        "faster-whisper==1.2.1" "huggingface-hub<2" "av==18.1.0"
+        "faster-whisper==1.2.1" "huggingface-hub<2"
     echo "[custom] faster-whisper 安装完成"
 else
     echo "[custom] INSTALL_ASR=false，跳过 faster-whisper"

@@ -21,6 +21,29 @@ from pathlib import Path
 LOGGER = logging.getLogger("stream_archive.asr_worker")
 
 
+def _patch_av_compat() -> None:
+    """兼容 av 19。
+
+    faster-whisper 1.2.1 调用 av.open(..., metadata_errors="ignore")，
+    而 av 19 移除了这个参数。等同于“忽略元数据错误”，直接丢掉即可。
+    """
+    try:
+        import av
+    except Exception:
+        return
+
+    original = av.open
+    if getattr(original, "_stream_archive_compat", False):
+        return
+
+    def open_compat(*args, **kwargs):
+        kwargs.pop("metadata_errors", None)
+        return original(*args, **kwargs)
+
+    open_compat._stream_archive_compat = True  # type: ignore[attr-defined]
+    av.open = open_compat
+
+
 def load_model(settings: dict):
     """加载 faster-whisper 模型。"""
     # HuggingFace 镜像必须在导入 huggingface_hub 之前设置
@@ -28,6 +51,7 @@ def load_model(settings: dict):
     if endpoint:
         os.environ["HF_ENDPOINT"] = endpoint
 
+    _patch_av_compat()
     from faster_whisper import WhisperModel
 
     device = str(settings["device"])

@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import types
 
+from stream_archive.asr_worker import _patch_av_compat
 from stream_archive.asr import (
     AsrError,
     build_worker_command,
@@ -173,6 +176,21 @@ class AsrTest(unittest.TestCase):
         with patch.dict(os.environ, env):
             with self.assertRaises(AsrError):
                 step_transcribe(self.config, self.streamer, self.job)
+
+    def test_av19_metadata_errors_compat(self) -> None:
+        recorded = {}
+
+        def fake_open(*args, **kwargs):
+            recorded.update(kwargs)
+            return "handle"
+
+        module = types.ModuleType("av")
+        module.open = fake_open
+        with patch.dict(sys.modules, {"av": module}):
+            _patch_av_compat()
+            module.open("x", mode="r", metadata_errors="ignore")
+
+        self.assertEqual(recorded, {"mode": "r"})
 
     def test_disabled_is_skipped(self) -> None:
         self.streamer.asr.enabled = False

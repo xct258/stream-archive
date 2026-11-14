@@ -317,7 +317,7 @@ pip install -e ".[web,asr]"
 ```
 
 - `[web]`：FastAPI + uvicorn，监控界面；
-- `[asr]`：faster-whisper + 固定 `av==18.1.0`（av 19 移除了 faster-whisper 1.2.1 使用的参数）；
+- `[asr]`：faster-whisper + av 最新版（worker 内置了 av 19 的 metadata_errors 兼容层）；
 - 只查看界面可以只装 `.[web]`；
 - ffmpeg 用系统包；DanmakuFactory / biliup 放到 `bin/` 或 PATH，在 config 里指向；
 - ASR 模型不打进镜像/仓库，首次转写时下载到 `[asr].model_dir`。

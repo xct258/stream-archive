@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stream-archive 监控</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▣</span>
+      <a href="#/">stream-archive</a>
+      <span id="server-name" class="server"></span>
+    </div>
+    <div class="health">
+      <span id="watcher-dot" class="dot"></span>
+      <span id="watcher-text">检查中…</span>
+      <span id="updated-at" class="muted"></span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <a href="#/" data-nav="dashboard">总览</a>
+    <a href="#/jobs" data-nav="jobs">任务</a>
+    <a href="#/logs" data-nav="logs">日志</a>
+  </nav>
+
+  <main id="app" class="page">
+    <div class="loading">加载中…</div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

@@ -126,4 +126,15 @@ else
     echo "[custom] INSTALL_ASR=false，跳过 faster-whisper"
 fi
 
+# ------------------------------------------------------------
+# 5. 监控界面（可选）
+# ------------------------------------------------------------
+if [ "${INSTALL_WEB:-false}" = "true" ]; then
+    echo "[custom] 安装监控界面依赖..."
+    python3 -m pip install "${pip_args[@]}" "fastapi>=0.110,<1" "uvicorn>=0.27,<1"
+    echo "[custom] FastAPI/uvicorn 安装完成"
+else
+    echo "[custom] INSTALL_WEB=false，跳过监控界面依赖"
+fi
+
 echo "[custom] 自定义安装全部完成"

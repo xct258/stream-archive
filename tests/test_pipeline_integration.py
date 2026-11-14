@@ -217,6 +217,10 @@ class PipelineIntegrationTest(unittest.TestCase):
         self.assertTrue(is_finished(job))
         self.assertTrue((job.outputs.get("upload") or {}).get("ok"))
 
+        # 任务日志文件应已创建（内容受 logging.disable 影响，这里只校验存在）
+        job_log = self.config.general.log_dir / "jobs" / f"{job.id}.log"
+        self.assertTrue(job_log.is_file())
+
         # 归档结构
         pressed = (
             self.root

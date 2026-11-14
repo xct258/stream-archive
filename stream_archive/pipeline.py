@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .config import Config, StreamerConfig
 from .danmaku import encode, xml_to_ass
-from .log import get_logger
+from .log import attach_job_log, detach_job_log, get_logger
 from .media import (
     CoverInfo,
     duration_diff,
@@ -32,6 +32,7 @@ from .asr import step_transcribe
 from .monthly import step_append_monthly
 from .progress_bar import build_images
 from .state import (
+    STEPS,
     Job,
     begin,
     date_parts,
@@ -52,19 +53,6 @@ from .webdav import step_upload_danmaku
 SMALL_FILE_BYTES = 10 * 1024 * 1024
 
 # 步骤顺序；retry 时从失败步骤开始重置
-STEPS = (
-    "scan",
-    "remux",
-    "duration_check",
-    "encode",
-    "cover",
-    "upload",
-    "append_monthly",
-    "archive",
-    "transcribe",
-    "upload_danmaku",
-    "cleanup_after",
-)
 
 # 每个步骤返回 (说明, 是否跳过)
 StepResult = tuple[str, bool]
@@ -240,6 +228,21 @@ def process_job(config: Config, job: Job, logger=None) -> bool:
     if streamer is None:
         raise RuntimeError(f"任务 {job.id} 的主播配置已不存在：{job.streamer_id}")
 
+    handler = None
+    try:
+        handler = attach_job_log(config.general.log_dir, job.id)
+    except OSError as exc:
+        logger.warning("无法创建任务日志：%s", exc)
+
+    try:
+        return _process_job_steps(config, streamer, job, logger)
+    finally:
+        if handler is not None:
+            detach_job_log(handler)
+
+
+def _process_job_steps(config: Config, streamer, job: Job, logger) -> bool:
+    """步骤执行主体；任务日志 handler 由 process_job 负责挂载/清理。"""
     reset_running(job)
     save_job(config.general.data_dir, job)
 
@@ -328,9 +331,8 @@ def has_failure(job: Job) -> bool:
 
 
 def is_finished(job: Job) -> bool:
-    return all(
-        job.status_of(step) in ("done", "skipped") for step in STEPS
-    )
+    steps = job.steps_expected or list(STEPS)
+    return all(job.status_of(step) in ("done", "skipped") for step in steps)
 
 
 def reset_running(job: Job) -> None:

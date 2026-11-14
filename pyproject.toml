@@ -13,12 +13,19 @@ authors = [{ name = "xct258" }]
 # 运行时零第三方依赖：tomllib（3.11+）、argparse、logging、urllib 均来自标准库。
 dependencies = []
 
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn>=0.27"]
+
 [project.scripts]
 stream-archive = "stream_archive.__main__:main"
 stream-archive-asr = "stream_archive.asr_worker:main"
+stream-archive-web = "stream_archive.web:main"
 
 [tool.setuptools]
 packages = ["stream_archive"]
+
+[tool.setuptools.package-data]
+stream_archive = ["webui/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

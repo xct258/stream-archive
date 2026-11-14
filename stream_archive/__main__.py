@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
+from . import __version__
 from .config import Config, ConfigError, load_config
 from .log import setup_logging
 from .pipeline import (
@@ -31,7 +34,7 @@ from .pipeline import (
     retry,
 )
 from .recorder import sync_all
-from .state import job_file, list_jobs, load_job
+from .state import job_file, list_jobs, load_job, now_text, write_heartbeat
 from .util import ensure_dir
 
 # 清理旧录播的间隔（秒）。守护进程每小时跑一次即可。
@@ -50,6 +53,15 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
     logger.info("开始监控：%s", ", ".join(str(path) for path in config.watch.source_folders))
     logger.info("轮询间隔 %s 秒，静默判定 %s 分钟", config.watch.poll_seconds, config.watch.idle_minutes)
 
+    # 心跳独立线程：即使正在压制几小时，网页也能看到 watcher 存活
+    heartbeat_state = {"directories": 0, "last_scan": now_text(), "last_error": ""}
+    threading.Thread(
+        target=_heartbeat_loop,
+        args=(config, heartbeat_state),
+        daemon=True,
+        name="watch-heartbeat",
+    ).start()
+
     last_cleanup = 0.0
     config_mtime = config_path.stat().st_mtime
 
@@ -66,7 +78,8 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
             resume_incomplete_jobs(config, logger)
 
             # ---- 处理已下播的目录 ----
-            for directory in discover_dirs(config):
+            directories = discover_dirs(config)
+            for directory in directories:
                 if not is_idle(directory, config.watch.idle_minutes):
                     logger.debug("仍在写入，跳过：%s", directory)
                     continue
@@ -78,8 +91,13 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
                 logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
                 last_cleanup = time.time()
 
-        except Exception:  # 守护进程不能因为单次异常退出
+            heartbeat_state["directories"] = len(directories)
+            heartbeat_state["last_scan"] = now_text()
+            heartbeat_state["last_error"] = ""
+
+        except Exception as exc:  # 守护进程不能因为单次异常退出
             logger.exception("监控循环异常，%s 秒后重试", config.watch.poll_seconds)
+            heartbeat_state["last_error"] = str(exc)
 
         time.sleep(config.watch.poll_seconds)
 
@@ -158,6 +176,20 @@ def cmd_check(config: Config, logger) -> int:
             logger.error("❌ 找不到 %s", command)
             errors += 1
 
+    if config.web.enabled:
+        probe = subprocess.run(
+            [sys.executable, "-c", "import fastapi, uvicorn"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            logger.info("✅ FastAPI/uvicorn 已安装（监控界面）")
+        else:
+            logger.error(
+                "❌ 未安装 FastAPI/uvicorn（构建镜像时把 install/app.conf 的 INSTALL_WEB 设为 true）"
+            )
+            errors += 1
+
     for streamer in config.enabled_streamers():
         logger.info("---- 主播 %s（%s）----", streamer.id, streamer.name)
 
@@ -217,6 +249,36 @@ def cmd_check(config: Config, logger) -> int:
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
+
+
+def _heartbeat_loop(config: Config, state: dict) -> None:
+    """每 30 秒写一次心跳，和主循环解耦。"""
+    while True:
+        _write_watch_heartbeat(
+            config,
+            int(state.get("directories", 0)),
+            str(state.get("last_scan", "")),
+            str(state.get("last_error", "")),
+        )
+        time.sleep(30)
+
+
+def _write_watch_heartbeat(
+    config: Config, directories: int, last_scan: str, error: str = ""
+) -> None:
+    """写 watcher 心跳，网页用它判断监控进程是否存活。"""
+    write_heartbeat(
+        config.general.data_dir,
+        {
+            "server_name": config.general.server_name,
+            "version": __version__,
+            "pid": os.getpid(),
+            "source_folders": [str(path) for path in config.watch.source_folders],
+            "directories": directories,
+            "last_scan": last_scan,
+            "last_error": error,
+        },
+    )
 
 
 def _acquire_watch_lock(config: Config, logger) -> None:

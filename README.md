@@ -1,10 +1,10 @@
 # stream-archive
 
-通用直播录播处理工具：**录制监控 → 碎片清理 → FLV→MP4 → 弹幕压制 → B 站投稿 → 按月合集 → 归档 → 弹幕上云 → 按天清理**。
+通用直播录播处理工具：**录制监控 → 碎片清理 → FLV→MP4 → 弹幕压制 → B 站投稿 → 按月合集 → 归档 → 弹幕上云 → 按天清理**，附带一个只读监控界面。
 
 - **通用多主播**：主播、房间号、投稿账号、标题/简介模板全部在 `config.toml` 里配置，代码里不出现具体主播；
 - **可恢复**：每场录播拆成 11 个幂等步骤，状态写入 JSON，失败后可以断点重试；
-- **零第三方 Python 依赖**：只用 3.11+ 标准库；外部依赖是 ffmpeg、DanmakuFactory、biliup；
+- **核心流程零第三方 Python 依赖**：只用 3.11+ 标准库；外部依赖是 ffmpeg、DanmakuFactory、biliup；监控界面可选 FastAPI/uvicorn；
 - **容器化**：基于 `xct258/docker-image-template` 构建多架构镜像，配置和启动逻辑与模板一致。
 
 ## 处理流程
@@ -43,6 +43,7 @@
 ```
 .
 ├── stream_archive/           # Python 实现
+│   └── webui/                # 监控界面（原生 HTML/CSS/JS）
 ├── tests/                    # 标准库 unittest
 ├── config.example.toml       # 配置示例
 ├── install/                  # 模板：构建期依赖与安装
@@ -235,16 +236,46 @@ stream-archive --config /data/config.toml check
 容器里 `services.sh` 启动了两个进程：
 
 - `watcher`：常驻监控；
-- `sync`：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次。
+- `sync`：启动时同步一次 cookies / 录播姬配置，之后每 24 小时一次；
+- `web`：监控界面（配置 `[web].enabled=true` 且镜像装了 FastAPI 时启动）。
 
 镜像内置 `fonts-noto-cjk`，默认 `[danmaku].font_name = "Noto Sans CJK SC"`；
 如果直接在宿主机运行，需要自行安装中文字体，或在配置里换成已有字体。
+
+## 监控界面（M1）
+
+FastAPI + 原生 JS，不经过前端构建。默认只读，操作类功能在后续阶段加入。
+
+```toml
+[web]
+enabled = true
+host = "127.0.0.1"   # 对外暴露请改 0.0.0.0 并放在反向代理后
+port = 8383
+refresh_seconds = 5
+```
+
+页面：
+
+- **总览**：watcher 心跳、磁盘、任务统计、录制目录、最近任务
+- **任务**：按状态/主播/关键字筛选，点击进入详情
+- **任务详情**：逐步状态、耗时、封面、产物列表、任务日志
+- **日志**：主日志和 service 日志，支持 tail 和自动刷新
+
+认证不在 Web 内做，推荐用 Nginx/Caddy 加 Basic Auth 或统一登录。注意 `network_mode: host` 下端口会直接暴露在宿主机。
+
+构建时 `install/app.conf` 的 `INSTALL_WEB=true`（默认）会安装 FastAPI/uvicorn；设为 `false` 可减小镜像，但 `[web].enabled` 不要开启。
+
+本地运行：
+
+```bash
+stream-archive-web --config /data/config.toml
+```
 
 ## 状态与日志
 
 - 任务状态：`/data/state/jobs/<主播id>-<时间>.json`
 - 运行日志：`/data/logs/stream-archive.log`、`/data/logs/jobs/<任务号>.log`
-- 进程日志：`/data/logs/service/watcher.log`、`sync.log`
+- 进程日志：`/data/logs/service/watcher.log`、`sync.log`、`web.log`
 - 归档：`/data/videos/<主播>/压制版|原文件/YYYY/MM/YYYY-MM-DD/`
 
 ## 本地开发与测试
@@ -271,6 +302,7 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 - `install/app.conf` 配置镜像名、架构、apt 依赖；
 - `install/custom-install.sh` 下载 DanmakuFactory、biliup，并用 `APP_REPO/APP_REF` 安装本项目；
 - `INSTALL_ASR=true`（默认）时额外安装 faster-whisper，提供内置语音转文本；设为 `false` 可减小镜像；
+- `INSTALL_WEB=true`（默认）时安装 FastAPI/uvicorn，提供监控界面；设为 `false` 可减小镜像；
 - `startup/*.sh` 负责每次启动、首次初始化、服务声明；
 - `template/` 是固定模板文件，构建时从当前仓库按提交 SHA 下载。
 
@@ -282,4 +314,5 @@ python3 scripts/make_test_media.py --output /tmp/demo-media
 - 不做 rclone 视频备份、在线切片；
 - 内置 ASR 的转写速度取决于 CPU/GPU 和模型大小，长录播可能较慢；
 - 录制端（录播姬）需要单独运行，本工具只消费它的输出目录；
-- WebDAV 只支持 Basic Auth，不支持 Digest / 分块上传。
+- WebDAV 只支持 Basic Auth，不支持 Digest / 分块上传；
+- 监控界面 M1 为只读，重试/手动处理等操作在 M2 加入。

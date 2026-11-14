@@ -27,3 +27,31 @@ start_sync() {
         done
     '
 }
+
+# ------------------------------------------------------------
+# 监控界面：配置 [web].enabled=true 且镜像里装了 FastAPI 才启动。
+# ------------------------------------------------------------
+web_enabled() {
+    python3 -c "import fastapi, uvicorn" >/dev/null 2>&1 || return 1
+    python3 - <<'PY' 2>/dev/null
+import sys
+import tomllib
+from pathlib import Path
+
+try:
+    config = tomllib.loads(Path("/data/config.toml").read_text(encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+
+sys.exit(0 if config.get("web", {}).get("enabled") else 1)
+PY
+}
+
+if web_enabled; then
+    SERVICE_NAMES+=(web)
+    SERVICE_STOP_TIMEOUT[web]=5
+
+    start_web() {
+        run_service web stream-archive-web --config /data/config.toml
+    }
+fi

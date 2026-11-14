@@ -47,6 +47,16 @@ class WatchConfig:
 
 
 @dataclass
+class WebConfig:
+    """只读监控界面（认证交给反向代理）。"""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8383
+    refresh_seconds: int = 5
+
+
+@dataclass
 class DanmakuConfig:
     enabled: bool = True
     factory: Path = Path("/usr/local/bin/DanmakuFactory")
@@ -212,6 +222,7 @@ class StreamerConfig:
 class Config:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     watch: WatchConfig = field(default_factory=WatchConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     recorder: RecorderConfig = field(default_factory=RecorderConfig)
     github: GithubConfig = field(default_factory=GithubConfig)
     streamers: list[StreamerConfig] = field(default_factory=list)
@@ -238,6 +249,13 @@ class Config:
             raise ConfigError("watch.poll_seconds 必须大于 0")
         if self.watch.idle_minutes <= 0:
             raise ConfigError("watch.idle_minutes 必须大于 0")
+
+        if not 1 <= self.web.port <= 65535:
+            raise ConfigError("web.port 必须在 1-65535 之间")
+        if self.web.refresh_seconds < 1:
+            raise ConfigError("web.refresh_seconds 至少为 1")
+        if not self.web.host.strip():
+            raise ConfigError("web.host 不能为空")
         if not self.streamers:
             raise ConfigError("至少需要配置一个 [[streamers]]")
 
@@ -630,6 +648,14 @@ def load_config(path: Path) -> Config:
         idle_minutes=_get_int(watch_raw, "watch", "idle_minutes", 20),
     )
 
+    web_raw = _section(raw, "web")
+    web = WebConfig(
+        enabled=_get_bool(web_raw, "web", "enabled", False),
+        host=_get_str(web_raw, "web", "host", "127.0.0.1"),
+        port=_get_int(web_raw, "web", "port", 8383),
+        refresh_seconds=_get_int(web_raw, "web", "refresh_seconds", 5),
+    )
+
     recorder_raw = _section(raw, "recorder")
     recorder = RecorderConfig(
         config_path=_get_path(
@@ -688,6 +714,7 @@ def load_config(path: Path) -> Config:
     config = Config(
         general=general,
         watch=watch,
+        web=web,
         recorder=recorder,
         github=github,
         streamers=streamers,

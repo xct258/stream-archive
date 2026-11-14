@@ -16,12 +16,28 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .util import atomic_write_json, ensure_dir, read_json
+
+# 流水线步骤顺序；状态、网页和重试逻辑共用这一份
+STEPS = (
+    "scan",
+    "remux",
+    "duration_check",
+    "encode",
+    "cover",
+    "upload",
+    "append_monthly",
+    "archive",
+    "transcribe",
+    "upload_danmaku",
+    "cleanup_after",
+)
 
 # 文件名里的时间：录播姬_2026年11月13日19点56分57秒_标题_主播.flv
 _START_TIME_PATTERN = re.compile(
@@ -62,6 +78,17 @@ def date_parts(start_time: str) -> tuple[str, str, str, str]:
     return f"{year}年{month}月{day}日", year, month, f"{year}-{month}-{day}"
 
 
+def _expected_steps(data: dict[str, Any]) -> list[str]:
+    """兼容旧状态文件：没有 steps_expected 时只认实际出现过的步骤。"""
+    expected = data.get("steps_expected")
+    if isinstance(expected, list) and expected:
+        return [str(step) for step in expected]
+    steps = data.get("steps")
+    if isinstance(steps, dict) and steps:
+        return list(steps.keys())
+    return list(STEPS)
+
+
 @dataclass
 class Job:
     """一场录播的完整处理状态。"""
@@ -75,6 +102,9 @@ class Job:
     source_dir: str                     # 录制源目录（文件搬走后可能为空）
     work_dir: str                       # 处理中的缓存目录
     created_at: str = field(default_factory=now_text)
+
+    # 这个任务按哪几步执行；旧状态文件没有该字段时用实际存在的步骤
+    steps_expected: list[str] = field(default_factory=lambda: list(STEPS))
 
     # 每一步的状态，结构：{步骤名: {status, started_at, finished_at, detail}}
     steps: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -100,6 +130,7 @@ class Job:
             "source_dir": self.source_dir,
             "work_dir": self.work_dir,
             "created_at": self.created_at,
+            "steps_expected": self.steps_expected,
             "steps": self.steps,
             "outputs": self.outputs,
         }
@@ -120,6 +151,7 @@ class Job:
             source_dir=str(data.get("source_dir", "")),
             work_dir=str(data.get("work_dir", "")),
             created_at=str(data.get("created_at", now_text())),
+            steps_expected=_expected_steps(data),
             steps=dict(data.get("steps", {})),
             outputs=dict(data.get("outputs", {})),
         )
@@ -219,3 +251,33 @@ def list_jobs(data_dir: Path) -> list[Job]:
             continue
     jobs.sort(key=lambda item: item.created_at, reverse=True)
     return jobs
+
+
+# ---------------------------------------------------------------------------
+# 守护进程心跳
+# ---------------------------------------------------------------------------
+
+
+def heartbeat_file(data_dir: Path) -> Path:
+    return data_dir / "heartbeat.json"
+
+
+def write_heartbeat(data_dir: Path, payload: dict) -> Path:
+    """watcher 每轮写一次，网页用它判断监控进程是否存活。"""
+    data = dict(payload)
+    data.setdefault("updated_ts", time.time())
+    data.setdefault("updated_at", now_text())
+    path = heartbeat_file(data_dir)
+    ensure_dir(path.parent)
+    atomic_write_json(path, data)
+    return path
+
+
+def read_heartbeat(data_dir: Path) -> dict | None:
+    path = heartbeat_file(data_dir)
+    if not path.is_file():
+        return None
+    try:
+        return read_json(path)
+    except (OSError, ValueError):
+        return None

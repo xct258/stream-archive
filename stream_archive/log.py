@@ -52,7 +52,7 @@ def setup_logging(
     # ---- 主日志文件 ----
     ensure_dir(log_dir)
     main_file = RotatingFileHandler(
-        log_dir / "stream_archive.log",
+        log_dir / "stream-archive.log",
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
@@ -63,18 +63,32 @@ def setup_logging(
 
     # ---- 单任务日志 ----
     if job_id:
-        job_dir = ensure_dir(log_dir / "jobs")
-        job_file = RotatingFileHandler(
-            job_dir / f"{job_id}.log",
-            maxBytes=10 * 1024 * 1024,
-            backupCount=2,
-            encoding="utf-8",
-        )
-        job_file.setLevel(logging.DEBUG)
-        job_file.setFormatter(formatter)
-        logger.addHandler(job_file)
+        attach_job_log(log_dir, job_id)
 
     return logger
+
+
+def attach_job_log(log_dir: Path, job_id: str) -> logging.Handler:
+    """给主 logger 挂一个任务日志 handler，返回句柄供结束时移除。"""
+    logger = logging.getLogger("stream_archive")
+    job_dir = ensure_dir(log_dir / "jobs")
+    handler = RotatingFileHandler(
+        job_dir / f"{job_id}.log",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=2,
+        encoding="utf-8",
+    )
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+    logger.addHandler(handler)
+    return handler
+
+
+def detach_job_log(handler: logging.Handler) -> None:
+    """移除并关闭任务日志 handler。"""
+    logger = logging.getLogger("stream_archive")
+    logger.removeHandler(handler)
+    handler.close()
 
 
 def get_logger(name: str = "stream_archive") -> logging.Logger:

@@ -222,6 +222,33 @@ insecure = false
 - `only_appended = true` 只上传成功追加到月稿件的 XML；
 - 支持 Basic Auth；自签名证书设 `insecure = true`。
 
+## 投稿审核状态
+
+biliup 输出里的“投稿成功”只代表 B 站接口接单，稿件还要经过审核。
+投稿步骤会把 BV 号写进任务状态，watcher 每 10 分钟刷新一次未出结果的稿件。
+
+手动查询或等待：
+
+```bash
+# 查一次
+stream-archive --config /data/config.toml review --bvid BV1xx411c7mD
+
+# 按任务号查，自动使用该主播的投稿 cookies
+stream-archive --config /data/config.toml review --job 2026-11-14_194808
+
+# 一直等到出结果（默认最长 2 小时，5 分钟查一次）
+stream-archive --config /data/config.toml review --job 2026-11-14_194808 --wait
+```
+
+状态含义：
+
+- `0`：已通过审核，公开可见；
+- `-1 / -2 / -30`：审核中；
+- `-50`：仅自己可见（已通过审核，但非公开）；
+- `-100 / -101 / -102`：审核未通过或已下线。
+
+退出码：已通过或仅自己可见 `0`，未通过 `1`，仍在审核/超时 `3`。
+
 ## 命令
 
 ```bash
@@ -232,6 +259,8 @@ stream-archive --config /data/config.toml retry <任务号>
 stream-archive --config /data/config.toml cleanup
 stream-archive --config /data/config.toml sync
 stream-archive --config /data/config.toml check
+stream-archive --config /data/config.toml review --bvid BV1xx411c7mD
+stream-archive --config /data/config.toml review --job <任务号> --wait
 ```
 
 容器里 `services.sh` 启动以下进程：

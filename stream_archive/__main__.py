@@ -8,6 +8,8 @@
     python -m stream_archive --config config.toml retry 2026-11-13_195657
     python -m stream_archive --config config.toml cleanup
     python -m stream_archive --config config.toml sync
+    python -m stream_archive --config config.toml review --bvid BV1xx411c7mD
+    python -m stream_archive --config config.toml review --job 2026-11-14_194808 --wait
 """
 
 from __future__ import annotations
@@ -34,11 +36,27 @@ from .pipeline import (
     retry,
 )
 from .recorder import sync_all
-from .state import job_file, list_jobs, load_job, now_text, write_heartbeat
+from .review import (
+    fetch_archive_state,
+    find_bvid,
+    refresh_pending_reviews,
+    wait_for_review,
+)
+from .state import (
+    job_file,
+    list_jobs,
+    load_job,
+    now_text,
+    save_job,
+    write_heartbeat,
+)
 from .util import ensure_dir
 
 # 清理旧录播的间隔（秒）。守护进程每小时跑一次即可。
 CLEANUP_INTERVAL = 3600
+
+# 刷新投稿审核状态的间隔（秒）
+REVIEW_INTERVAL = 600
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +81,7 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
     ).start()
 
     last_cleanup = 0.0
+    last_review_check = 0.0
     config_mtime = config_path.stat().st_mtime
 
     while True:
@@ -90,6 +109,16 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
                 deleted = cleanup_archives(config, logger)
                 logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
                 last_cleanup = time.time()
+
+            # ---- 刷新投稿审核状态 ----
+            if time.time() - last_review_check >= REVIEW_INTERVAL:
+                try:
+                    checked = refresh_pending_reviews(config, logger)
+                    if checked:
+                        logger.info("审核状态已刷新 %s 个稿件", checked)
+                except Exception:
+                    logger.exception("刷新审核状态失败")
+                last_review_check = time.time()
 
             heartbeat_state["directories"] = len(directories)
             heartbeat_state["last_scan"] = now_text()
@@ -146,7 +175,100 @@ def cmd_status(config: Config, job_id: str | None, logger) -> int:
         upload_info = job.outputs.get("upload") or {}
         if upload_info:
             print(f"  投稿：{'成功' if upload_info.get('ok') else '失败'}")
+            if upload_info.get("bvid"):
+                print(f"  投稿 BV：{upload_info['bvid']}")
+        review_info = job.outputs.get("review") or {}
+        if review_info:
+            print(
+                f"  审核：{review_info.get('message', '-')}"
+                f"（{review_info.get('checked_at', '-')}）"
+            )
     return 0
+
+
+def cmd_review(config: Config, args, logger) -> int:
+    """查询稿件的 B 站审核状态；--wait 时持续轮询。"""
+    job = None
+    bvid = (args.bvid or "").strip()
+
+    if args.job:
+        path = job_file(config.general.data_dir, args.job)
+        if not path.is_file():
+            logger.error("找不到任务：%s", args.job)
+            return 1
+        job = load_job(path)
+        upload_info = job.outputs.get("upload") or {}
+        bvid = str(upload_info.get("bvid") or "").strip()
+        if not bvid:
+            bvid = find_bvid(str(upload_info.get("detail") or "")) or ""
+        if not bvid:
+            append_info = job.outputs.get("append") or {}
+            bvid = str(append_info.get("vid") or "").strip()
+        if not bvid:
+            logger.error("任务 %s 里没有找到投稿 BV 号", args.job)
+            return 1
+
+    if not bvid:
+        logger.error("请用 --bvid 或 --job 指定稿件")
+        return 1
+
+    cookies = args.cookies
+    if cookies is None and job is not None:
+        streamer = next(
+            (
+                item
+                for item in config.enabled_streamers()
+                if item.id == job.streamer_id
+                or job.streamer in (item.id, item.name)
+            ),
+            None,
+        )
+        if streamer is not None:
+            cookies = streamer.upload.cookies
+
+    if cookies is None:
+        # 没有指定任务时，优先用配置里第一个存在 cookies 文件的主播
+        candidates = [
+            item.upload.cookies
+            for item in config.enabled_streamers()
+        ]
+        cookies = next((path for path in candidates if path.is_file()), None)
+        if cookies is None and candidates:
+            cookies = candidates[0]
+
+    if cookies is None or not cookies.is_file():
+        logger.error("投稿 cookies 不存在：%s", cookies or "配置里没有 upload.cookies")
+        return 1
+
+    def persist(state) -> None:
+        if job is None:
+            return
+        job.outputs["review"] = state.as_dict()
+        save_job(config.general.data_dir, job)
+
+    if args.wait:
+        state = wait_for_review(
+            cookies,
+            bvid,
+            timeout=args.timeout,
+            interval=args.interval,
+            logger=logger,
+            on_update=persist,
+        )
+    else:
+        state = fetch_archive_state(cookies, bvid)
+        persist(state)
+
+    print(f"\nBV：{state.bvid}")
+    print(f"标题：{state.title or '-'}")
+    print(f"状态：{state.message}")
+    print(f"查询时间：{state.checked_at}")
+
+    if state.kind in ("published", "self_only"):
+        return 0
+    if state.kind == "rejected":
+        return 1
+    return 3
 
 
 def cmd_retry(config: Config, job_id: str, logger) -> int:
@@ -353,6 +475,17 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("sync", parents=[common], help="同步 cookies 和录播姬房间配置")
     subparsers.add_parser("check", parents=[common], help="部署前自检")
 
+    review = subparsers.add_parser(
+        "review", parents=[common], help="查询/等待 B站审核状态"
+    )
+    target = review.add_mutually_exclusive_group(required=True)
+    target.add_argument("--bvid", help="BV 号")
+    target.add_argument("--job", help="任务 id（自动取投稿 BV 和 cookies）")
+    review.add_argument("--wait", action="store_true", help="持续轮询直到有结果")
+    review.add_argument("--timeout", type=int, default=7200, help="--wait 最长秒数")
+    review.add_argument("--interval", type=int, default=300, help="轮询间隔秒数")
+    review.add_argument("--cookies", type=Path, help="投稿 cookies（默认取配置）")
+
     return parser
 
 
@@ -383,6 +516,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_sync(config, logger)
     if args.command == "check":
         return cmd_check(config, logger)
+    if args.command == "review":
+        return cmd_review(config, args, logger)
 
     parser.print_help()
     return 1

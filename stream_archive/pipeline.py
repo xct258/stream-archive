@@ -45,7 +45,7 @@ from .state import (
     save_job,
     skip,
 )
-from .upload import render_desc, render_title, upload
+from .upload import extract_bvid, render_desc, render_title, upload
 from .util import ensure_dir, human_size
 from .webdav import step_upload_danmaku
 
@@ -613,16 +613,21 @@ def step_upload(
         description=description,
         cover=cover_path,
     )
+    bvid = extract_bvid(result.detail)
     job.outputs["upload"] = {
         "ok": result.ok,
         "detail": result.detail,
         "title": title,
+        "bvid": bvid or "",
         "files": [str(path) for path in files],
     }
     if not result.ok:
         raise RuntimeError(f"投稿失败：{result.detail[-300:]}")
+    if bvid:
+        logger.info("投稿 BV：%s", bvid)
 
-    return f"投稿成功：{title}", False
+    suffix = f"（{bvid}）" if bvid else ""
+    return f"投稿成功：{title}{suffix}", False
 
 
 def upload_candidates(job: Job, streamer: StreamerConfig) -> list[Path]:

@@ -618,6 +618,7 @@ def step_upload(
         "ok": result.ok,
         "detail": result.detail,
         "title": title,
+        "description": description,
         "bvid": bvid or "",
         "files": [str(path) for path in files],
     }

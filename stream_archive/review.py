@@ -428,7 +428,29 @@ def _targets(job) -> list[tuple[str, str]]:
     vid = job_append_vid(job)
     if vid:
         result.append(("append_review", vid))
+    repair = job.outputs.get("repair") or {}
+    repair_bvid = str(repair.get("bvid") or "").strip()
+    if repair_bvid and repair.get("status") == "uploaded":
+        result.append(("repair_review", repair_bvid))
     return result
+
+
+REVIEW_KEY_PREFIXES = ("review", "append_review", "repair_review")
+
+
+def _save_review_updates(config, job) -> None:
+    """只把审核相关字段合并回最新状态，避免覆盖 repair/步骤字段。"""
+    from .state import JOB_LOCK, job_file, load_job, save_job
+
+    with JOB_LOCK:
+        try:
+            latest = load_job(job_file(config.general.data_dir, job.id))
+        except (OSError, ValueError, KeyError):
+            latest = job
+        for key, value in job.outputs.items():
+            if key.startswith(REVIEW_KEY_PREFIXES):
+                latest.outputs[key] = value
+        save_job(config.general.data_dir, latest)
 
 
 def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
@@ -436,7 +458,7 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
 
     每轮最多对每个账号发 3 次列表请求，且只检查到了退避时间的 BV。
     """
-    from .state import list_jobs, save_job
+    from .state import list_jobs
 
     jobs = list_jobs(config.general.data_dir)
     if max_jobs and max_jobs > 0:
@@ -497,7 +519,7 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
             due.append((job, key, bvid, cookies))
 
         if changed:
-            save_job(config.general.data_dir, job)
+            _save_review_updates(config, job)
 
     if not due:
         return 0
@@ -519,7 +541,7 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
                 attempts = int(job.outputs.get(f"{key}_attempts") or 0)
                 job.outputs[f"{key}_next_at"] = time.time() + 1800
                 job.outputs[f"{key}_attempts"] = attempts + 1
-                save_job(config.general.data_dir, job)
+                _save_review_updates(config, job)
             continue
 
         for job, key, bvid, _cookies in items:
@@ -532,7 +554,11 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
             if state is not None:
                 job.outputs[key] = state.as_dict()
                 if logger is not None and state.kind != old_kind:
-                    label = "单场" if key == "review" else "月稿"
+                    label = {
+                    "review": "单场",
+                    "append_review": "月稿",
+                    "repair_review": "修复版",
+                }.get(key, key)
                     logger.info(
                         "%s审核状态：%s %s（%s）",
                         label,
@@ -555,6 +581,6 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
             else:
                 _schedule(job, key, attempts, now)
 
-            save_job(config.general.data_dir, job)
+            _save_review_updates(config, job)
 
     return checked

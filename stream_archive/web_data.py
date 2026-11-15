@@ -202,6 +202,9 @@ def job_detail(raw: dict) -> dict:
         "append": outputs.get("append") or {},
         "review": outputs.get("review") or {},
         "append_review": outputs.get("append_review") or {},
+        "repair_review": outputs.get("repair_review") or {},
+        "repair": outputs.get("repair") or {},
+        "monthly_repair": outputs.get("monthly_repair") or {},
         "cover_url": summary["cover_url"],
     }
 

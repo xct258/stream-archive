@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -225,12 +226,20 @@ def job_file(data_dir: Path, job_id: str) -> Path:
     return data_dir / "jobs" / f"{job_id}.json"
 
 
+JOB_LOCK = threading.RLock()
+
+
 def save_job(data_dir: Path, job: Job) -> Path:
-    """保存任务状态，返回文件路径。"""
-    path = job_file(data_dir, job.id)
-    ensure_dir(path.parent)
-    atomic_write_json(path, job.to_dict())
-    return path
+    """保存任务状态，返回文件路径。
+
+    JOB_LOCK 防止 review / repair 线程同时写同一个 JSON；
+    调用方如果要“读-改-写”，应先拿这个锁再 load，避免覆盖别人的字段。
+    """
+    with JOB_LOCK:
+        path = job_file(data_dir, job.id)
+        ensure_dir(path.parent)
+        atomic_write_json(path, job.to_dict())
+        return path
 
 
 def load_job(path: Path) -> Job:

@@ -93,6 +93,28 @@ function reviewBadge(review) {
   return `<span class="badge ${cls}">${text}</span>`;
 }
 
+function repairPanel(repair, label) {
+  if (!repair || !repair.status) return "";
+  const map = {
+    running: ["running", "处理中"],
+    uploaded: ["done", "已重投"],
+    ready: ["skipped", "修复稿就绪"],
+    failed: ["failed", "修复失败"],
+    skipped: ["pending", "未自动处理"],
+  };
+  const [cls, text] = map[repair.status] || ["pending", repair.status];
+  const bvid = repair.bvid ? ` · ${videoLink(repair.bvid)}` : "";
+  const file = repair.fixed_file
+    ? `<div class="small muted" style="margin-top:4px">修复文件：${esc(repair.fixed_file)}</div>`
+    : "";
+  return `
+    <div class="card" style="margin-top:12px">
+      <div><strong>${esc(label)}</strong> <span class="badge ${cls}">${text}</span>${bvid}</div>
+      <div class="small muted" style="margin-top:4px">${esc(repair.message || "")}</div>
+      ${file}
+    </div>`;
+}
+
 function reviewPanel(review, label) {
   if (!review || !review.kind) return "";
   const details = (review.problem_details || [])
@@ -471,6 +493,9 @@ async function renderJobDetail(jobId, silent = false) {
 
     ${reviewPanel(data.review, "单场投稿审核")}
     ${reviewPanel(data.append_review, "月稿追加审核")}
+    ${reviewPanel(data.repair_review, "修复版审核")}
+    ${repairPanel(data.repair, "自动修复（单场）")}
+    ${repairPanel(data.monthly_repair, "月稿修复")}
 
     <div class="section">
       <h2>步骤</h2>

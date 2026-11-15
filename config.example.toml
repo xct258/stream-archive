@@ -170,6 +170,21 @@ desc_template = "本稿件为{streamer}{month_cn}原版直播回放合集，每�
 cover = ""
 
 
+[repair]
+# 稿件被退回后自动修复（要求有明确的 P 号 + 时间段）
+# 单场：切掉违规片段，重新投一个新 BV，旧 BV 保留
+# 月稿：只生成修复稿，不自动追加（biliup 不能删除旧分P）
+enabled = true
+# 同一任务最多自动重投几次；1 表示失败后不再自动尝试
+max_attempts = 1
+# 违规时间段前后额外多切几秒
+margin_seconds = 2
+# 只处理最近多少天的任务，避免自动翻旧账
+max_age_days = 7
+# 重投标题后缀
+title_suffix = "（修复版）"
+
+
 [webdav]
 # 把 XML 弹幕文件上传到 WebDAV（直接用 HTTP，不需要安装 rclone）
 enabled = false

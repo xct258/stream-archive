@@ -124,6 +124,20 @@ class AppendConfig:
 
 
 @dataclass
+class RepairConfig:
+    """被退回后自动切掉违规时间段并重投（单场），月稿只生成修复稿。"""
+
+    enabled: bool = True
+    max_attempts: int = 1
+    # 违规时间段前后额外多切几秒，确保内容被删干净
+    margin_seconds: int = 2
+    # 只处理最近多少天的任务，避免自动翻旧账
+    max_age_days: int = 7
+    # 重投标题后缀
+    title_suffix: str = "（修复版）"
+
+
+@dataclass
 class AsrConfig:
     """语音转文本：本地一次性加载 faster-whisper，转写完退出并释放模型。"""
 
@@ -242,6 +256,7 @@ class Config:
     web: WebConfig = field(default_factory=WebConfig)
     recorder: RecorderConfig = field(default_factory=RecorderConfig)
     github: GithubConfig = field(default_factory=GithubConfig)
+    repair: RepairConfig = field(default_factory=RepairConfig)
     streamers: list[StreamerConfig] = field(default_factory=list)
 
     # ---- 查询辅助 ----
@@ -271,6 +286,13 @@ class Config:
             raise ConfigError("web.port 必须在 1-65535 之间")
         if self.web.refresh_seconds < 1:
             raise ConfigError("web.refresh_seconds 至少为 1")
+
+        if self.repair.max_attempts < 0:
+            raise ConfigError("repair.max_attempts 不能为负数")
+        if not 0 <= self.repair.margin_seconds <= 60:
+            raise ConfigError("repair.margin_seconds 必须在 0-60 之间")
+        if self.repair.max_age_days <= 0:
+            raise ConfigError("repair.max_age_days 必须大于 0")
         if not self.web.host.strip():
             raise ConfigError("web.host 不能为空")
 
@@ -718,6 +740,15 @@ def load_config(path: Path) -> Config:
         sources=sources,
     )
 
+    repair_raw = _section(raw, "repair")
+    repair = RepairConfig(
+        enabled=_get_bool(repair_raw, "repair", "enabled", True),
+        max_attempts=_get_int(repair_raw, "repair", "max_attempts", 1),
+        margin_seconds=_get_int(repair_raw, "repair", "margin_seconds", 2),
+        max_age_days=_get_int(repair_raw, "repair", "max_age_days", 7),
+        title_suffix=_get_str(repair_raw, "repair", "title_suffix", "（修复版）"),
+    )
+
     # ---- 主播（全局默认 + 覆盖） ----
     default_danmaku = _section(raw, "danmaku")
     default_encode = _section(raw, "encode")
@@ -744,6 +775,7 @@ def load_config(path: Path) -> Config:
         web=web,
         recorder=recorder,
         github=github,
+        repair=repair,
         streamers=streamers,
     )
     config.validate()

@@ -36,6 +36,7 @@ from .pipeline import (
     retry,
 )
 from .recorder import sync_all
+from .repair import repair_worker_loop
 from .review import (
     fetch_archive_state,
     find_bvid,
@@ -79,12 +80,19 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
         daemon=True,
         name="watch-heartbeat",
     ).start()
-    # 审核状态独立线程：即使正在压制几小时，也每 10 分钟查一次
+    # 审核状态独立线程：即使正在压制几小时，也每 15 分钟查一次
     threading.Thread(
         target=_review_loop,
         args=(config_path, logger),
         daemon=True,
         name="review-loop",
+    ).start()
+    # 自动修复线程：被退回后切片段并重投（单场），月稿只生成修复稿
+    threading.Thread(
+        target=repair_worker_loop,
+        args=(config_path, logger),
+        daemon=True,
+        name="repair-loop",
     ).start()
 
     last_cleanup = 0.0
@@ -178,6 +186,26 @@ def cmd_status(config: Config, job_id: str | None, logger) -> int:
             print(
                 f"  审核：{review_info.get('message', '-')}"
                 f"（{review_info.get('checked_at', '-')}）"
+            )
+        repair_info = job.outputs.get("repair") or {}
+        if repair_info:
+            print(
+                f"  自动修复：{repair_info.get('status', '-')}"
+                f" {repair_info.get('message', '')}"
+            )
+            if repair_info.get("bvid"):
+                print(f"  修复版 BV：{repair_info['bvid']}")
+        repair_review = job.outputs.get("repair_review") or {}
+        if repair_review:
+            print(
+                f"  修复版审核：{repair_review.get('message', '-')}"
+                f"（{repair_review.get('checked_at', '-')}）"
+            )
+        monthly_repair = job.outputs.get("monthly_repair") or {}
+        if monthly_repair:
+            print(
+                f"  月稿修复：{monthly_repair.get('status', '-')}"
+                f" {monthly_repair.get('message', '')}"
             )
     return 0
 

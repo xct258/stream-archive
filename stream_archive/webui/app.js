@@ -77,6 +77,45 @@ function statusBadge(status) {
   return `<span class="badge ${key}">${STATUS_LABELS[key]}</span>`;
 }
 
+function reviewBadge(review) {
+  const kind = (review && review.kind) || "";
+  if (!kind) return '<span class="badge pending">-</span>';
+  const map = {
+    published: ["done", "已通过"],
+    reviewing: ["running", "审核中"],
+    self_only: ["skipped", "仅自见"],
+    rejected: ["failed", "已退回"],
+    not_found: ["pending", "待审核"],
+    unknown: ["pending", "未知"],
+    error: ["failed", "查询失败"],
+  };
+  const [cls, text] = map[kind] || ["pending", kind];
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+
+function reviewPanel(review, label) {
+  if (!review || !review.kind) return "";
+  const details = (review.problem_details || [])
+    .map((item, index) => {
+      const time = item.violation_time ? ` · ${esc(item.violation_time)}` : "";
+      const position = item.violation_position ? ` · ${esc(item.violation_position)}` : "";
+      return `<div class="small" style="margin-top:6px">${index + 1}. ${esc(item.reason || "")}${time}${position}</div>`;
+    })
+    .join("");
+  const reason = review.reject_reason
+    ? `<div class="small" style="margin-top:6px;color:var(--red)">退回原因：${esc(review.reject_reason)}</div>`
+    : "";
+  const advice = review.modify_advise
+    ? `<div class="small muted" style="margin-top:4px">建议：${esc(review.modify_advise)}</div>`
+    : "";
+  return `
+    <div class="card" style="margin-top:12px">
+      <div><strong>${esc(label)}</strong> ${reviewBadge(review)}</div>
+      <div class="small muted" style="margin-top:4px">${esc(review.message || "")}</div>
+      ${reason}${details}${advice}
+    </div>`;
+}
+
 function progressBar(percent, status) {
   const width = Math.max(0, Math.min(100, Number(percent || 0)));
   return `<div class="progress ${esc(status)}"><span style="width:${width}%"></span></div>`;
@@ -201,6 +240,7 @@ function jobRow(job) {
       <td>${progressBar(job.progress, job.status)}</td>
       <td>${fmtDuration(job.elapsed_seconds)}</td>
       <td>${videoLink(job.video_id)}</td>
+      <td>${reviewBadge(job.review)}</td>
     </tr>`;
 }
 
@@ -214,7 +254,7 @@ function jobTable(jobs) {
         <thead>
           <tr>
             <th>任务</th><th>主播</th><th>标题</th><th>状态</th>
-            <th>当前步骤</th><th>进度</th><th>耗时</th><th>稿件</th>
+            <th>当前步骤</th><th>进度</th><th>耗时</th><th>稿件</th><th>审核</th>
           </tr>
         </thead>
         <tbody>${jobs.map(jobRow).join("")}</tbody>
@@ -428,6 +468,9 @@ async function renderJobDetail(jobId, silent = false) {
       <div class="small muted">进度 ${data.progress}%</div>
       ${progressBar(data.progress, data.status)}
     </div>
+
+    ${reviewPanel(data.review, "单场投稿审核")}
+    ${reviewPanel(data.append_review, "月稿追加审核")}
 
     <div class="section">
       <h2>步骤</h2>

@@ -118,6 +118,8 @@ def job_summary(raw: dict) -> dict:
     cover = (outputs.get("cover") or {}).get("path") or ""
     cover_url = f"/api/jobs/{raw.get('id')}/cover" if cover and Path(cover).is_file() else ""
     asr_done = len((outputs.get("asr") or {}).get("done") or [])
+    review = outputs.get("review") or {}
+    append_review = outputs.get("append_review") or {}
 
     return {
         "id": raw.get("id", ""),
@@ -134,6 +136,14 @@ def job_summary(raw: dict) -> dict:
         "finished_at": finished,
         "upload_ok": bool((outputs.get("upload") or {}).get("ok")),
         "video_id": _video_id(outputs),
+        "review": {
+            "kind": str(review.get("kind") or ""),
+            "message": str(review.get("message") or ""),
+        },
+        "append_review": {
+            "kind": str(append_review.get("kind") or ""),
+            "message": str(append_review.get("message") or ""),
+        },
         "asr_done": asr_done,
         "cover_url": cover_url,
     }
@@ -186,9 +196,12 @@ def job_detail(raw: dict) -> dict:
         "upload": {
             "ok": bool((outputs.get("upload") or {}).get("ok")),
             "title": (outputs.get("upload") or {}).get("title", ""),
+            "bvid": (outputs.get("upload") or {}).get("bvid", ""),
             "detail": str((outputs.get("upload") or {}).get("detail", ""))[-2000:],
         },
         "append": outputs.get("append") or {},
+        "review": outputs.get("review") or {},
+        "append_review": outputs.get("append_review") or {},
         "cover_url": summary["cover_url"],
     }
 

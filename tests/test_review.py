@@ -215,6 +215,62 @@ class ReviewTest(unittest.TestCase):
             loaded = load_job(job_file(data, "j1"))
             self.assertEqual(loaded.outputs["review"]["kind"], "published")
 
+    def test_refresh_tracks_monthly_append(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp)
+            cookies = data / "cookies.json"
+            write_cookie(cookies)
+            config = Config(general=GeneralConfig(data_dir=data))
+            config.streamers = [
+                StreamerConfig(
+                    id="gaojidong",
+                    name="高机动持盾军官",
+                    upload=UploadConfig(cookies=cookies),
+                )
+            ]
+            job = Job(
+                id="j2",
+                streamer_id="gaojidong",
+                platform="录播姬",
+                streamer="高机动持盾军官",
+                stream_title="测试",
+                start_time="2026-11-14 19:48:08",
+                source_dir="",
+                work_dir="",
+            )
+            job.outputs["upload"] = {"ok": True, "bvid": "BV1HcsE6QE9y"}
+            job.outputs["append"] = {
+                "vid": "BV1jrxt6uE3Z",
+                "done": ["a.mp4"],
+                "created": False,
+            }
+            save_job(data, job)
+
+            published = ReviewState("BV", 0, "published", "已公开")
+            with patch(
+                "stream_archive.review.fetch_archive_state", return_value=published
+            ) as fetch:
+                first = refresh_pending_reviews(config)
+                second = refresh_pending_reviews(config)
+
+            self.assertEqual(first, 2)  # 单场 + 月稿
+            self.assertEqual(second, 1)  # 单场已结束，月稿观察期内继续查
+            self.assertEqual(fetch.call_count, 3)
+
+            loaded = load_job(job_file(data, "j2"))
+            self.assertEqual(loaded.outputs["append_review"]["kind"], "published")
+            self.assertIn("append_review_until", loaded.outputs)
+
+            # 观察期结束后不再查询
+            loaded.outputs["append_review_until"] = 0
+            save_job(data, loaded)
+            with patch(
+                "stream_archive.review.fetch_archive_state", return_value=published
+            ) as fetch2:
+                third = refresh_pending_reviews(config)
+            self.assertEqual(third, 0)
+            self.assertEqual(fetch2.call_count, 0)
+
     def test_wait_stops_on_rejected(self) -> None:
         rejected = ReviewState("BV1HcsE6QE9y", -100, "rejected", "未通过")
         with (

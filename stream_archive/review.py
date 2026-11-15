@@ -296,12 +296,21 @@ def wait_for_review(
 
 
 def job_bvid(job) -> str | None:
-    """从任务状态里取投稿 BV；老任务没有 bvid 字段时从 detail 里解析。"""
+    """从任务状态里取单场投稿 BV；老任务没有 bvid 字段时从 detail 里解析。"""
     upload = job.outputs.get("upload") or {}
     bvid = str(upload.get("bvid") or "").strip()
     if bvid:
         return bvid
     return find_bvid(str(upload.get("detail") or ""))
+
+
+def job_append_vid(job) -> str | None:
+    """月稿追加成功后需要跟踪的 BV。"""
+    append = job.outputs.get("append") or {}
+    if not (append.get("done") or append.get("created")):
+        return None
+    vid = str(append.get("vid") or "").strip()
+    return vid or None
 
 
 def job_cookies(config, job) -> Path | None:
@@ -319,42 +328,83 @@ def job_cookies(config, job) -> Path | None:
     return streamer.upload.cookies
 
 
-def refresh_pending_reviews(config, logger=None, max_jobs: int = 50) -> int:
-    """刷新最近任务里还没出审核结果的稿件，返回检查数量。
+# 月稿追加后，B 站可能延迟进入审核；0 状态要多观察一段时间
+APPEND_REVIEW_GRACE = 86400
 
-    由 watcher 每 10 分钟调用一次；已通过/仅自己可见/未通过的任务不再重复查。
+
+def _is_final_review(job, key: str, kind: str, now: float) -> bool:
+    """判断某个跟踪目标是否已经不需要再查。"""
+    if kind in ("rejected", "self_only"):
+        return True
+    if kind == "published":
+        if key != "append_review":
+            return True
+        # 月稿追加：给 B 站 24 小时处理新分P
+        until = float(job.outputs.get("append_review_until") or 0)
+        return now >= until
+    return False
+
+
+def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
+    """刷新还没出结果的单场投稿和月稿追加，返回检查次数。
+
+    由 watcher 的独立线程每 10 分钟调用，不受长时间压制阻塞。
     """
     from .state import list_jobs, save_job
 
-    updated = 0
-    for job in list_jobs(config.general.data_dir)[:max_jobs]:
-        bvid = job_bvid(job)
-        if not bvid:
-            continue
+    jobs = list_jobs(config.general.data_dir)
+    if max_jobs and max_jobs > 0:
+        jobs = jobs[:max_jobs]
 
-        review = job.outputs.get("review") or {}
-        if review.get("kind") in FINAL_KINDS:
+    updated = 0
+    cache: dict[str, ReviewState] = {}
+    now = time.time()
+
+    for job in jobs:
+        upload_bvid = job_bvid(job)
+        append_bvid = job_append_vid(job)
+        if not upload_bvid and not append_bvid:
             continue
 
         cookies = job_cookies(config, job)
         if cookies is None or not cookies.is_file():
             continue
 
-        state = fetch_archive_state(cookies, bvid)
-        if state.kind == "error":
-            # 网络/接口错误不写状态，下一轮再试
-            continue
+        changed = False
+        if append_bvid and "append_review_until" not in job.outputs:
+            job.outputs["append_review_until"] = now + APPEND_REVIEW_GRACE
+            changed = True
 
-        previous = str(review.get("kind") or "")
-        job.outputs["review"] = state.as_dict()
-        save_job(config.general.data_dir, job)
-        updated += 1
-        if logger is not None and state.kind != previous:
-            logger.info(
-                "审核状态：%s %s（%s）",
-                state.bvid,
-                state.message,
-                state.title or "-",
-            )
+        for key, bvid in (("review", upload_bvid), ("append_review", append_bvid)):
+            if not bvid:
+                continue
+            previous = job.outputs.get(key) or {}
+            old_kind = str(previous.get("kind") or "")
+            if _is_final_review(job, key, old_kind, now):
+                continue
+
+            state = cache.get(bvid)
+            if state is None:
+                state = fetch_archive_state(cookies, bvid)
+                cache[bvid] = state
+            if state.kind == "error":
+                # 网络/接口错误不写状态，下一轮再试
+                continue
+
+            job.outputs[key] = state.as_dict()
+            changed = True
+            updated += 1
+            if logger is not None and state.kind != old_kind:
+                label = "单场" if key == "review" else "月稿"
+                logger.info(
+                    "%s审核状态：%s %s（%s）",
+                    label,
+                    state.bvid,
+                    state.message,
+                    state.title or "-",
+                )
+
+        if changed:
+            save_job(config.general.data_dir, job)
 
     return updated

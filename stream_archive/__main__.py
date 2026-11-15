@@ -79,9 +79,15 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
         daemon=True,
         name="watch-heartbeat",
     ).start()
+    # 审核状态独立线程：即使正在压制几小时，也每 10 分钟查一次
+    threading.Thread(
+        target=_review_loop,
+        args=(config_path, logger),
+        daemon=True,
+        name="review-loop",
+    ).start()
 
     last_cleanup = 0.0
-    last_review_check = 0.0
     config_mtime = config_path.stat().st_mtime
 
     while True:
@@ -109,16 +115,6 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
                 deleted = cleanup_archives(config, logger)
                 logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
                 last_cleanup = time.time()
-
-            # ---- 刷新投稿审核状态 ----
-            if time.time() - last_review_check >= REVIEW_INTERVAL:
-                try:
-                    checked = refresh_pending_reviews(config, logger)
-                    if checked:
-                        logger.info("审核状态已刷新 %s 个稿件", checked)
-                except Exception:
-                    logger.exception("刷新审核状态失败")
-                last_review_check = time.time()
 
             heartbeat_state["directories"] = len(directories)
             heartbeat_state["last_scan"] = now_text()
@@ -415,6 +411,19 @@ def cmd_check(config: Config, logger) -> int:
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
+
+
+def _review_loop(config_path: Path, logger) -> None:
+    """独立线程：定时刷新单场和月稿的审核状态。"""
+    while True:
+        try:
+            config = load_config(config_path)
+            checked = refresh_pending_reviews(config, logger)
+            if checked:
+                logger.info("审核状态已刷新 %s 个稿件", checked)
+        except Exception:
+            logger.exception("刷新审核状态失败")
+        time.sleep(REVIEW_INTERVAL)
 
 
 def _heartbeat_loop(config: Config, state: dict) -> None:

@@ -262,6 +262,21 @@ def cmd_review(config: Config, args, logger) -> int:
     print(f"\nBV：{state.bvid}")
     print(f"标题：{state.title or '-'}")
     print(f"状态：{state.message}")
+    if state.state_desc and state.state_desc not in state.message:
+        print(f"状态说明：{state.state_desc}")
+    if state.reject_reason:
+        print(f"退回原因：{state.reject_reason}")
+    if state.problem_title:
+        print(f"问题类型：{state.problem_title}")
+    if state.modify_advise:
+        print(f"修改建议：{state.modify_advise}")
+    if state.reject_reason_url:
+        print(f"规则链接：{state.reject_reason_url}")
+    if state.problem_description:
+        text = state.problem_description
+        if len(text) > 600:
+            text = text[:600] + "…"
+        print(f"规则说明：{text}")
     print(f"查询时间：{state.checked_at}")
 
     if state.kind in ("published", "self_only"):

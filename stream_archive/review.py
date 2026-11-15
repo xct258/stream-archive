@@ -26,8 +26,8 @@ from .recorder import cookie_string_from_json
 
 ARCHIVE_LIST_URL = "https://member.bilibili.com/x/web/archives"
 # 每页最大 100 条；账号稿件多时最多翻这么多页
-DEFAULT_MAX_PAGES = 12
-PAGE_SIZE = 100
+DEFAULT_MAX_PAGES = 30
+PAGE_SIZE = 50
 
 BV_PATTERN = re.compile(r"BV[0-9A-Za-z]{10}")
 
@@ -42,6 +42,13 @@ class ReviewState:
     message: str
     title: str = ""
     checked_at: str = ""
+    # 退回/审核不通过时 B 站返回的详细信息
+    state_desc: str = ""
+    reject_reason: str = ""
+    problem_title: str = ""
+    problem_description: str = ""
+    modify_advise: str = ""
+    reject_reason_url: str = ""
 
     @property
     def ok(self) -> bool:
@@ -62,7 +69,9 @@ def classify_state(state: int | None) -> tuple[str, str]:
         return "not_found", "没有在稿件列表里找到这个稿件"
     if state == 0:
         return "published", "已通过审核，公开可见"
-    if state in (-1, -2, -30):
+    if state == -2:
+        return "rejected", "审核退回，仅自己可见"
+    if state in (-1, -30):
         return "reviewing", f"审核中（state={state}）"
     if state == -50:
         return "self_only", "仅自己可见（已通过审核，非公开）"
@@ -142,6 +151,9 @@ def fetch_archive_state(
             except (TypeError, ValueError):
                 state = None
             kind, message = classify_state(state)
+            reject_reason = str(archive.get("reject_reason") or "").strip()
+            if kind == "rejected" and reject_reason:
+                message = f"{message}：{reject_reason}"
             return ReviewState(
                 bvid,
                 state,
@@ -149,6 +161,16 @@ def fetch_archive_state(
                 message,
                 title=str(archive.get("title") or ""),
                 checked_at=checked_at,
+                state_desc=str(archive.get("state_desc") or ""),
+                reject_reason=reject_reason,
+                problem_title=str(
+                    archive.get("problem_description_title") or ""
+                ).strip(),
+                problem_description=str(
+                    archive.get("problem_description") or ""
+                ).strip(),
+                modify_advise=str(archive.get("modify_advise") or "").strip(),
+                reject_reason_url=str(archive.get("reject_reason_url") or "").strip(),
             )
 
         if len(audits) < PAGE_SIZE:

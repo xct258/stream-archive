@@ -40,6 +40,7 @@ class ReviewTest(unittest.TestCase):
     def test_classify_state(self) -> None:
         self.assertEqual(classify_state(0)[0], "published")
         self.assertEqual(classify_state(-30)[0], "reviewing")
+        self.assertEqual(classify_state(-2)[0], "rejected")
         self.assertEqual(classify_state(-50)[0], "self_only")
         self.assertEqual(classify_state(-100)[0], "rejected")
         self.assertEqual(classify_state(123)[0], "unknown")
@@ -76,6 +77,40 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(state.kind, "reviewing")
         self.assertEqual(state.state, -30)
         self.assertEqual(state.title, "2026年11月14日 [暗区科科币tv]")
+
+    def test_fetch_rejected_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            cookies = Path(temp) / "cookies.json"
+            write_cookie(cookies)
+            payload = {
+                "code": 0,
+                "data": {
+                    "arc_audits": [
+                        {
+                            "Archive": {
+                                "bvid": "BV1TUMNzeE5F",
+                                "state": -2,
+                                "state_desc": "退回仅自见",
+                                "title": "回放",
+                                "reject_reason": "该视频【P1(02:42:02-02:43:37)】不予审核通过",
+                                "problem_description_title": "关于法律法规",
+                                "problem_description": "禁止发布违法内容",
+                                "modify_advise": "建议删除或修改片段",
+                                "reject_reason_url": "http://member.bilibili.com/studio/convention/",
+                            }
+                        }
+                    ]
+                },
+            }
+            with patch("stream_archive.review._request_json", return_value=payload):
+                state = fetch_archive_state(cookies, "BV1TUMNzeE5F")
+
+        self.assertEqual(state.kind, "rejected")
+        self.assertIn("审核退回", state.message)
+        self.assertIn("02:42:02", state.reject_reason)
+        self.assertEqual(state.problem_title, "关于法律法规")
+        self.assertEqual(state.modify_advise, "建议删除或修改片段")
+        self.assertTrue(state.reject_reason_url.startswith("http"))
 
     def test_fetch_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

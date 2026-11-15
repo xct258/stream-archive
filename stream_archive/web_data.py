@@ -120,6 +120,8 @@ def job_summary(raw: dict) -> dict:
     asr_done = len((outputs.get("asr") or {}).get("done") or [])
     review = outputs.get("review") or {}
     append_review = outputs.get("append_review") or {}
+    repair = outputs.get("repair") or {}
+    monthly_repair = outputs.get("monthly_repair") or {}
 
     return {
         "id": raw.get("id", ""),
@@ -143,6 +145,14 @@ def job_summary(raw: dict) -> dict:
         "append_review": {
             "kind": str(append_review.get("kind") or ""),
             "message": str(append_review.get("message") or ""),
+        },
+        "repair": {
+            "status": str(repair.get("status") or ""),
+            "message": str(repair.get("message") or ""),
+        },
+        "monthly_repair": {
+            "status": str(monthly_repair.get("status") or ""),
+            "message": str(monthly_repair.get("message") or ""),
         },
         "asr_done": asr_done,
         "cover_url": cover_url,

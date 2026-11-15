@@ -93,6 +93,23 @@ function reviewBadge(review) {
   return `<span class="badge ${cls}">${text}</span>`;
 }
 
+function repairBadge(job) {
+  const daily = job.repair || {};
+  const monthly = job.monthly_repair || {};
+  const item = daily.status ? daily : monthly;
+  if (!item || !item.status) return '<span class="badge pending">-</span>';
+  const map = {
+    running: ["running", "处理中"],
+    ready: ["pending", "待投稿"],
+    uploaded: ["done", "已重投"],
+    failed: ["failed", "失败"],
+    skipped: ["pending", "未处理"],
+  };
+  const [cls, text] = map[item.status] || ["pending", item.status];
+  const prefix = daily.status ? "" : "月稿 ";
+  return `<span class="badge ${cls}">${prefix}${text}</span>`;
+}
+
 function repairPanel(repair, label) {
   if (!repair || !repair.status) return "";
   const map = {
@@ -262,7 +279,8 @@ function jobRow(job) {
       <td>${progressBar(job.progress, job.status)}</td>
       <td>${fmtDuration(job.elapsed_seconds)}</td>
       <td>${videoLink(job.video_id)}</td>
-      <td>${reviewBadge(job.review)}</td>
+      <td>${reviewBadge(job.review && job.review.kind ? job.review : job.append_review)}</td>
+      <td>${repairBadge(job)}</td>
     </tr>`;
 }
 
@@ -276,7 +294,7 @@ function jobTable(jobs) {
         <thead>
           <tr>
             <th>任务</th><th>主播</th><th>标题</th><th>状态</th>
-            <th>当前步骤</th><th>进度</th><th>耗时</th><th>稿件</th><th>审核</th>
+            <th>当前步骤</th><th>进度</th><th>耗时</th><th>稿件</th><th>审核</th><th>修复</th>
           </tr>
         </thead>
         <tbody>${jobs.map(jobRow).join("")}</tbody>

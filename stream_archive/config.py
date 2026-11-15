@@ -76,11 +76,13 @@ class EncodeConfig:
     qsv_quality: int = 20
     qsv_preset: str = "medium"
 
-    # 可选高能进度条：把弹幕密度曲线叠在画面底部
+    # 可选高能进度条：把弹幕密度曲线叠在画面底部（khx-live 经典样式）
     progress_bar: bool = False
     progress_bar_height: int = 64
+    # 以下两项保留兼容；经典样式固定绿色/灰色/红/蓝
     progress_bar_opacity: float = 0.6
     progress_bar_color: str = "0x2ED6FF"
+    # 高斯平滑窗口（秒）
     progress_bar_smooth: int = 60
 
 

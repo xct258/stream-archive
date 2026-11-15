@@ -148,21 +148,22 @@ cover = ""                  # 可选封面
 
 ## 高能进度条（可选）
 
-在画面底部叠加弹幕密度曲线：
+复刻 khx-live 的曲线样式，叠在画面底部：
 
-- 已播放区域保持高亮，未播放区域压暗；
-- 白色竖线是播放头，随时间移动；
-- 曲线按秒统计弹幕数，开平方抑制刷屏尖峰，再做滑动平均；
-- 纯 Python 生成三张小图（曲线、遮罩、播放头），不需要 matplotlib/Pillow；
-- 生成失败会自动退化为普通投稿版，不影响任务。
+- 透明背景，2~3px 细曲线，不填充；
+- 已播放绿色，未播放灰色；
+- SC 前后 30 秒红色，舰长前后 30 秒蓝色（SC 优先）；
+- 曲线按秒统计弹幕数，开平方抑制刷屏尖峰，再做高斯平滑；
+- 只渲染画面底部条带，每秒一帧，管道给 ffmpeg 编码成带 alpha 的视频；
+- 不需要 matplotlib/numpy/Pillow；生成失败会自动退化为普通投稿版。
 
 ```toml
 [encode]
 progress_bar = true
-progress_bar_height = 64      # 像素，1080p 建议 48-80
-progress_bar_opacity = 0.6    # 0-1
-progress_bar_color = "0x2ED6FF"
-progress_bar_smooth = 60      # 平滑窗口（秒）
+progress_bar_height = 64      # 条带高度（像素），1080p 建议 64
+progress_bar_smooth = 60      # 高斯平滑窗口（秒）
+# progress_bar_color / progress_bar_opacity 保留兼容；
+# 经典样式固定绿色/灰色/红/蓝，不再使用这两项
 ```
 
 单个主播可以单独开启：

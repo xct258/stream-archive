@@ -91,17 +91,17 @@ try_qsv = true
 qsv_quality = 20
 qsv_preset = "medium"
 
-# ---- 可选高能进度条 ----
-# 在画面底部叠加弹幕密度曲线：已播放区域高亮，未播放区域压暗，白色竖线是播放头。
+# ---- 可选高能进度条（khx-live 经典样式）----
+# 透明背景细曲线：已播放绿色、未播放灰色；
+# SC 前后 30 秒红色，舰长前后 30 秒蓝色（SC 优先）。
 # 生成失败会自动退化为无进度条压制，不阻塞任务。
 progress_bar = false
-# 进度条高度（像素）；1080p 建议 48-80
+# 条带高度（像素）；1080p 建议 64
 progress_bar_height = 64
-# 整体不透明度 0-1
+# 以下两项保留兼容；经典样式固定颜色和线宽，不再使用
 progress_bar_opacity = 0.6
-# 曲线颜色 0xRRGGBB 或 #RRGGBB
 progress_bar_color = "0x2ED6FF"
-# 平滑窗口（秒），越大曲线越平缓
+# 高斯平滑窗口（秒），越大曲线越平缓
 progress_bar_smooth = 60
 
 

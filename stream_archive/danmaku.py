@@ -164,8 +164,8 @@ def _run_encode(
         -progress pipe:1                       用机器可读格式输出进度
 
     高能进度条：
-        额外三路输入是进度条、遮罩、播放头（单帧 PPM），
-        overlay 用 eof_action=repeat 让它们铺满整场；
+        额外一路输入是带 alpha 的进度条条带视频（1 fps），
+        overlay 用 eof_action=repeat 让最后一帧铺到结尾；
         具体滤镜在 progress_bar.build_filter。
     """
     logger = get_logger("stream_archive.danmaku")
@@ -180,11 +180,7 @@ def _run_encode(
     ]
 
     if bar_images is not None:
-        cmd += [
-            "-i", str(bar_images.bar),
-            "-i", str(bar_images.mask),
-            "-i", str(bar_images.line),
-        ]
+        cmd += ["-i", str(bar_images.bar)]
         filter_complex = build_filter(
             duration,
             config.progress_bar_opacity,

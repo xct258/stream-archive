@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from .config import AppendConfig, Config, StreamerConfig
@@ -213,6 +214,10 @@ def step_append_monthly(
         info["done"].append(file.name)
         done.add(file.name)
         save_job(config.general.data_dir, job)
+
+    # 记录追加完成时间：审核观察期从这里开始算，而不是任务创建时间
+    info["finished_at"] = int(time.time())
+    save_job(config.general.data_dir, job)
 
     added = len(pending) + (1 if created else 0)
     action = "新建并追加" if created else "追加"

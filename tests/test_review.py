@@ -203,7 +203,8 @@ class ReviewTest(unittest.TestCase):
                 "BV1HcsE6QE9y", 0, "published", "已通过审核，公开可见"
             )
             with patch(
-                "stream_archive.review.fetch_archive_state", return_value=published
+                "stream_archive.review.fetch_states_for_bvids",
+                return_value={"BV1HcsE6QE9y": published},
             ) as fetch:
                 first = refresh_pending_reviews(config)
                 second = refresh_pending_reviews(config)
@@ -246,30 +247,52 @@ class ReviewTest(unittest.TestCase):
             }
             save_job(data, job)
 
-            published = ReviewState("BV", 0, "published", "已公开")
+            daily = ReviewState("BV1HcsE6QE9y", 0, "published", "已公开")
+            monthly = ReviewState("BV1jrxt6uE3Z", 0, "published", "已公开")
             with patch(
-                "stream_archive.review.fetch_archive_state", return_value=published
+                "stream_archive.review.fetch_states_for_bvids",
+                return_value={
+                    "BV1HcsE6QE9y": daily,
+                    "BV1jrxt6uE3Z": monthly,
+                },
             ) as fetch:
                 first = refresh_pending_reviews(config)
                 second = refresh_pending_reviews(config)
 
             self.assertEqual(first, 2)  # 单场 + 月稿
-            self.assertEqual(second, 1)  # 单场已结束，月稿观察期内继续查
-            self.assertEqual(fetch.call_count, 3)
+            self.assertEqual(second, 0)  # 两者都排进了退避时间
+            self.assertEqual(fetch.call_count, 1)
 
             loaded = load_job(job_file(data, "j2"))
             self.assertEqual(loaded.outputs["append_review"]["kind"], "published")
             self.assertIn("append_review_until", loaded.outputs)
 
-            # 观察期结束后不再查询
-            loaded.outputs["append_review_until"] = 0
+            # 手动把月稿的下次检查时间拨到现在，并保留观察期
+            import time as _time
+
+            loaded.outputs["append_review_next_at"] = 0
+            loaded.outputs["append_review_until"] = int(_time.time()) + 3600
             save_job(data, loaded)
             with patch(
-                "stream_archive.review.fetch_archive_state", return_value=published
+                "stream_archive.review.fetch_states_for_bvids",
+                return_value={"BV1jrxt6uE3Z": monthly},
             ) as fetch2:
                 third = refresh_pending_reviews(config)
-            self.assertEqual(third, 0)
-            self.assertEqual(fetch2.call_count, 0)
+            self.assertEqual(third, 1)
+            self.assertEqual(fetch2.call_count, 1)
+
+            # 观察期结束后不再查询
+            loaded = load_job(job_file(data, "j2"))
+            loaded.outputs["append_review_until"] = 0
+            loaded.outputs["append_review_next_at"] = 0
+            save_job(data, loaded)
+            with patch(
+                "stream_archive.review.fetch_states_for_bvids",
+                return_value={"BV1jrxt6uE3Z": monthly},
+            ) as fetch3:
+                fourth = refresh_pending_reviews(config)
+            self.assertEqual(fourth, 0)
+            self.assertEqual(fetch3.call_count, 0)
 
     def test_wait_stops_on_rejected(self) -> None:
         rejected = ReviewState("BV1HcsE6QE9y", -100, "rejected", "未通过")

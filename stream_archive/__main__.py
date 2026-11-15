@@ -56,7 +56,7 @@ from .util import ensure_dir
 CLEANUP_INTERVAL = 3600
 
 # 刷新投稿审核状态的间隔（秒）
-REVIEW_INTERVAL = 600
+REVIEW_INTERVAL = 900
 
 
 # ---------------------------------------------------------------------------

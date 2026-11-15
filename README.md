@@ -266,29 +266,60 @@ stream-archive --config /data/config.toml review --job 2026-11-14_194808 --wait
 
 退出码：已通过或仅自己可见 `0`，未通过 `1`，仍在审核/超时 `3`。
 
-## 被退回后的自动修复
+## 被退回后的修复
 
-默认开启 `[repair] enabled=true`：
+默认开启 `[repair] enabled=true`，但**只生成修复稿，不自动投稿**。
 
-- 只处理有明确 **P 号 + 时间段**、且不是权利人举报的退回；
-- 单场投稿：从归档的压制版里切掉违规片段，重新投一个新 BV；
-  旧 BV 保留为“仅自己可见”，不调用删除接口；
-- 月稿合集：只生成切好的原版修复稿，保存到 `data/repair/<任务号>/`，
-  需要人工替换分P（biliup 不能删除旧分P）；
-- 一次追加了多个分P的月稿、权利人举报、没有具体时间段的退回，
-  不会自动切，会标记为未处理；
-- 修复文件不会自动清理，确认不再需要后可手动删除 `data/repair/`；
-- 每个任务最多自动重投 1 次，失败后停止，不会循环；
-- 切片段优先按关键帧切分（快，可能多删几秒）；
-  关键帧太稀疏时退化为整场重编码（慢但精确）；
-- 修复状态、修复文件和新 BV 会写进任务状态和监控网页。
+切片段参数对齐旧项目 `ffmpeg视频处理.sh`：
+
+- 违规片段前后各扩展 **5 秒**；
+- `-ss`/`-to` + `-c copy` 切成 `.ts` 片段；
+- concat 合并成 mp4，不重新编码；
+- 切分结果异常时才退化为整场重编码（慢但精确）。
+
+### 单场投稿
+
+生成修复稿后等待人工操作：
+
+```bash
+# 查看修复稿和需要删除的旧稿件
+stream-archive --config /data/config.toml repair --job 2026-11-14_194808
+
+# 到 B 站删除旧稿件或违规分P后，手动上传
+stream-archive --config /data/config.toml repair --job 2026-11-14_194808 --upload
+```
+
+上传规则：
+
+- 旧 BV 已删除：重投包含修复P的完整分P集合，生成新 BV；
+- 只删了违规分P（分P数量减少）：只重投修复后的那一P；
+- 旧 BV 还在且分P数量没变：拒绝上传，避免重复；
+- `--force` 可跳过“旧稿件已删除”检查。
+
+旧 BV 保留为“仅自己可见”，工具不调用删除接口。
+
+### 月稿合集
+
+```bash
+stream-archive --config /data/config.toml repair --job 2026-11-14_194808 --upload --monthly
+```
+
+先生成修复稿；到 B 站删除违规分P后，再执行上面的命令把修复版追加回月稿。
+
+### 不会自动处理的情况
+
+- 权利人举报、侵权类退回；
+- 没有明确 P 号 + 时间段的退回；
+- 一次追加多个分P的月稿（无法可靠判断切哪个文件）；
+- 多P单场但退回原因没写 P 号。
+
+修复文件保存在 `data/repair/<任务号>/`，不会自动清理。
 
 ```toml
 [repair]
 enabled = true
-max_attempts = 1          # 同一任务最多自动重投几次
-margin_seconds = 2        # 违规时间段前后多切几秒
-max_age_days = 7          # 只处理最近多少天的任务
+margin_seconds = 5
+max_age_days = 7
 title_suffix = "（修复版）"
 ```
 
@@ -304,6 +335,8 @@ stream-archive --config /data/config.toml sync
 stream-archive --config /data/config.toml check
 stream-archive --config /data/config.toml review --bvid BV1xx411c7mD
 stream-archive --config /data/config.toml review --job <任务号> --wait
+stream-archive --config /data/config.toml repair --job <任务号>
+stream-archive --config /data/config.toml repair --job <任务号> --upload
 ```
 
 容器里 `services.sh` 启动以下进程：

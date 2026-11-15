@@ -36,7 +36,13 @@ from .pipeline import (
     retry,
 )
 from .recorder import sync_all
-from .repair import repair_worker_loop
+from .repair import (
+    RepairError,
+    prepare_repair,
+    repair_worker_loop,
+    upload_daily_repair,
+    upload_monthly_repair,
+)
 from .review import (
     fetch_archive_state,
     find_bvid,
@@ -326,6 +332,60 @@ def cmd_review(config: Config, args, logger) -> int:
     return 3
 
 
+def cmd_repair(config: Config, args, logger) -> int:
+    """生成修复稿，或用户删除旧稿后手动上传。"""
+    path = job_file(config.general.data_dir, args.job)
+    if not path.is_file():
+        logger.error("找不到任务：%s", args.job)
+        return 1
+
+    try:
+        if not args.upload:
+            job = load_job(path)
+            prepare_repair(config, job, logger, manual=True)
+            job = load_job(path)
+            repair = job.outputs.get("repair") or {}
+            monthly = job.outputs.get("monthly_repair") or {}
+            if repair:
+                print(f"单场修复：{repair.get('status')} {repair.get('message', '')}")
+                print(f"  旧 BV：{repair.get('source_bvid') or '-'}")
+                print(f"  P：{repair.get('pindex') or '-'}")
+                print(f"  修复文件：{repair.get('fixed_file') or '-'}")
+            if monthly:
+                print(f"月稿修复：{monthly.get('status')} {monthly.get('message', '')}")
+                print(f"  月稿 BV：{job.outputs.get('append', {}).get('vid') or '-'}")
+                print(f"  修复文件：{monthly.get('fixed_file') or '-'}")
+            if not repair and not monthly:
+                print("没有需要修复的退回")
+            print("\n删除旧稿件或违规分P后，执行：")
+            print(f"  stream-archive repair --job {args.job} --upload")
+            return 0
+
+        job = load_job(path)
+        repair = job.outputs.get("repair") or {}
+        monthly = job.outputs.get("monthly_repair") or {}
+        use_monthly = args.monthly or (
+            monthly.get("status") == "ready" and repair.get("status") != "ready"
+        )
+        if use_monthly:
+            if monthly.get("status") != "ready":
+                logger.error("月稿修复稿还没准备好：%s", monthly.get("status") or "无")
+                return 1
+            upload_monthly_repair(config, job, logger, args.force)
+        else:
+            if repair.get("status") != "ready":
+                logger.error("单场修复稿还没准备好：%s", repair.get("status") or "无")
+                return 1
+            upload_daily_repair(config, job, logger, args.force)
+        return 0
+    except RepairError as exc:
+        logger.error("%s", exc)
+        return 1
+    except Exception:
+        logger.exception("修复操作失败")
+        return 1
+
+
 def cmd_retry(config: Config, job_id: str, logger) -> int:
     return 0 if retry(config, job_id, logger) else 1
 
@@ -554,6 +614,14 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--interval", type=int, default=300, help="轮询间隔秒数")
     review.add_argument("--cookies", type=Path, help="投稿 cookies（默认取配置）")
 
+    repair = subparsers.add_parser(
+        "repair", parents=[common], help="生成/上传被退回稿件的修复版"
+    )
+    repair.add_argument("--job", required=True, help="任务 id")
+    repair.add_argument("--upload", action="store_true", help="确认已删除旧稿后上传")
+    repair.add_argument("--monthly", action="store_true", help="处理月稿修复")
+    repair.add_argument("--force", action="store_true", help="跳过旧稿件已删除检查")
+
     return parser
 
 
@@ -586,6 +654,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_check(config, logger)
     if args.command == "review":
         return cmd_review(config, args, logger)
+    if args.command == "repair":
+        return cmd_repair(config, args, logger)
 
     parser.print_help()
     return 1

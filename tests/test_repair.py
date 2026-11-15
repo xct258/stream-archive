@@ -19,13 +19,17 @@ from stream_archive.config import (
 )
 from stream_archive.repair import (
     CutRange,
+    RepairError,
+    _daily_mode,
     _pressed_files,
     cut_file,
-    execute_one_repair,
+    prepare_repair,
+    upload_daily_repair,
     is_rights_rejection,
     keep_segments,
     parse_review_ranges,
 )
+from stream_archive.review import ReviewState
 from stream_archive.state import Job
 from stream_archive.upload import UploadResult
 
@@ -115,7 +119,7 @@ class RepairFlowTest(unittest.TestCase):
 
             config = Config(
                 general=GeneralConfig(data_dir=root / "state"),
-                repair=RepairConfig(max_attempts=1, margin_seconds=2),
+                repair=RepairConfig(margin_seconds=2),
             )
             config.streamers = [
                 StreamerConfig(
@@ -162,16 +166,29 @@ class RepairFlowTest(unittest.TestCase):
                     return_value=UploadResult(True, "投稿成功 BV1FIX000000"),
                 ) as upload_mock,
             ):
-                acted = execute_one_repair(config, job, logger)
+                acted = prepare_repair(config, job, logger)
 
             self.assertTrue(acted)
+            self.assertEqual(job.outputs["repair"]["status"], "ready")
+            self.assertTrue(Path(job.outputs["repair"]["fixed_file"]).is_file())
+            upload_mock.assert_not_called()
+
+            with (
+                patch("stream_archive.repair._daily_mode", return_value="single"),
+                patch(
+                    "stream_archive.repair.upload",
+                    return_value=UploadResult(True, "投稿成功 BV1FIX000000"),
+                ) as upload_mock2,
+            ):
+                upload_daily_repair(config, job, logger, force=False)
+
             self.assertEqual(job.outputs["repair"]["status"], "uploaded")
             self.assertEqual(job.outputs["repair"]["bvid"], "BV1FIX000000")
             self.assertEqual(job.outputs["repair"]["attempts"], 1)
-            upload_mock.assert_called_once()
-            files = upload_mock.call_args.args[1]
+            upload_mock2.assert_called_once()
+            files = upload_mock2.call_args.args[1]
             self.assertEqual(files[0].name, "修复版-投稿版-a.mp4")
-            self.assertIn("修复版", upload_mock.call_args.kwargs["title"])
+            self.assertIn("修复版", upload_mock2.call_args.kwargs["title"])
 
     def test_monthly_repair_only_generates_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -213,12 +230,59 @@ class RepairFlowTest(unittest.TestCase):
                 patch("stream_archive.repair.cut_file", side_effect=fake_cut),
                 patch("stream_archive.repair.upload") as upload_mock,
             ):
-                acted = execute_one_repair(config, job, logging.getLogger("test"))
+                acted = prepare_repair(config, job, logging.getLogger("test"))
 
             self.assertTrue(acted)
             self.assertEqual(job.outputs["monthly_repair"]["status"], "ready")
-            self.assertIn("人工替换", job.outputs["monthly_repair"]["message"])
+            self.assertIn("repair --upload", job.outputs["monthly_repair"]["message"])
             upload_mock.assert_not_called()
+
+    def test_daily_mode_requires_deletion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            files = []
+            for name in ("a.mp4", "b.mp4"):
+                path = root / name
+                path.write_bytes(b"x")
+                files.append(path)
+            config = Config()
+            job = make_job(
+                root,
+                {
+                    "upload_files": [str(path) for path in files],
+                    "repair": {"status": "ready", "source_bvid": "BV1OLD000000"},
+                },
+            )
+            cookies = root / "cookies.json"
+
+            with patch(
+                "stream_archive.repair.fetch_archive_state",
+                return_value=ReviewState("BV1OLD000000", None, "not_found", "已删除"),
+            ):
+                self.assertEqual(_daily_mode(config, job, cookies, False), "all")
+
+            with (
+                patch(
+                    "stream_archive.repair.fetch_archive_state",
+                    return_value=ReviewState("BV1OLD000000", -2, "rejected", "退回"),
+                ),
+                patch("stream_archive.repair._pagelist", return_value=[{"page": 1}]),
+            ):
+                self.assertEqual(_daily_mode(config, job, cookies, False), "single")
+
+            with (
+                patch(
+                    "stream_archive.repair.fetch_archive_state",
+                    return_value=ReviewState("BV1OLD000000", 0, "published", "正常"),
+                ),
+                patch(
+                    "stream_archive.repair._pagelist",
+                    return_value=[{"page": 1}, {"page": 2}],
+                ),
+            ):
+                with self.assertRaises(RepairError):
+                    _daily_mode(config, job, cookies, False)
+                self.assertEqual(_daily_mode(config, job, cookies, True), "single")
 
     def test_rights_rejection_is_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -241,7 +305,7 @@ class RepairFlowTest(unittest.TestCase):
                     }
                 },
             )
-            acted = execute_one_repair(config, job, logging.getLogger("test"))
+            acted = prepare_repair(config, job, logging.getLogger("test"))
             self.assertFalse(acted)
             self.assertEqual(job.outputs["repair"]["status"], "skipped")
 

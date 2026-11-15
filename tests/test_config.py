@@ -85,13 +85,12 @@ class ConfigTest(unittest.TestCase):
     def test_repair_section(self) -> None:
         self.path.write_text(
             self.path.read_text(encoding="utf-8")
-            + '\n[repair]\nenabled = false\nmax_attempts = 2\n'
+            + '\n[repair]\nenabled = false\n'
             + 'margin_seconds = 5\nmax_age_days = 3\ntitle_suffix = "（修复）"\n',
             encoding="utf-8",
         )
         config = load_config(self.path)
         self.assertFalse(config.repair.enabled)
-        self.assertEqual(config.repair.max_attempts, 2)
         self.assertEqual(config.repair.margin_seconds, 5)
         self.assertEqual(config.repair.max_age_days, 3)
         self.assertEqual(config.repair.title_suffix, "（修复）")

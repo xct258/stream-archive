@@ -125,12 +125,11 @@ class AppendConfig:
 
 @dataclass
 class RepairConfig:
-    """被退回后自动切掉违规时间段并重投（单场），月稿只生成修复稿。"""
+    """被退回后切掉违规时间段，生成修复稿（不自动投稿）。"""
 
     enabled: bool = True
-    max_attempts: int = 1
-    # 违规时间段前后额外多切几秒，确保内容被删干净
-    margin_seconds: int = 2
+    # 和旧项目 ffmpeg视频处理.sh 一致：违规片段前后各扩展 5 秒
+    margin_seconds: int = 5
     # 只处理最近多少天的任务，避免自动翻旧账
     max_age_days: int = 7
     # 重投标题后缀
@@ -287,8 +286,6 @@ class Config:
         if self.web.refresh_seconds < 1:
             raise ConfigError("web.refresh_seconds 至少为 1")
 
-        if self.repair.max_attempts < 0:
-            raise ConfigError("repair.max_attempts 不能为负数")
         if not 0 <= self.repair.margin_seconds <= 60:
             raise ConfigError("repair.margin_seconds 必须在 0-60 之间")
         if self.repair.max_age_days <= 0:
@@ -743,8 +740,7 @@ def load_config(path: Path) -> Config:
     repair_raw = _section(raw, "repair")
     repair = RepairConfig(
         enabled=_get_bool(repair_raw, "repair", "enabled", True),
-        max_attempts=_get_int(repair_raw, "repair", "max_attempts", 1),
-        margin_seconds=_get_int(repair_raw, "repair", "margin_seconds", 2),
+        margin_seconds=_get_int(repair_raw, "repair", "margin_seconds", 5),
         max_age_days=_get_int(repair_raw, "repair", "max_age_days", 7),
         title_suffix=_get_str(repair_raw, "repair", "title_suffix", "（修复版）"),
     )

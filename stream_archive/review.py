@@ -18,7 +18,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -49,6 +49,9 @@ class ReviewState:
     problem_description: str = ""
     modify_advise: str = ""
     reject_reason_url: str = ""
+    # problem_detail / Videos 里更具体的逐P问题（含时间段）
+    problem_details: list[dict] = field(default_factory=list)
+    videos: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -151,9 +154,67 @@ def fetch_archive_state(
             except (TypeError, ValueError):
                 state = None
             kind, message = classify_state(state)
-            reject_reason = str(archive.get("reject_reason") or "").strip()
+
+            problem_details = []
+            for detail in item.get("problem_detail") or []:
+                if not isinstance(detail, dict):
+                    continue
+                problem_details.append(
+                    {
+                        "type": str(detail.get("type") or ""),
+                        "index": detail.get("index"),
+                        "reason": str(detail.get("reject_reason") or "").strip(),
+                        "advice": str(detail.get("modify_advise") or "").strip(),
+                        "problem_title": str(
+                            detail.get("problem_description_title") or ""
+                        ).strip(),
+                        "description": str(
+                            detail.get("problem_description") or ""
+                        ).strip(),
+                        "violation_time": str(
+                            detail.get("violation_time") or ""
+                        ).strip(),
+                        "violation_position": str(
+                            detail.get("violation_position") or ""
+                        ).strip(),
+                    }
+                )
+
+            videos = []
+            for video in item.get("Videos") or []:
+                if not isinstance(video, dict):
+                    continue
+                videos.append(
+                    {
+                        "index": video.get("index"),
+                        "title": str(video.get("title") or ""),
+                        "reason": str(video.get("reject_reason") or "").strip(),
+                        "advice": str(video.get("modify_advise") or "").strip(),
+                    }
+                )
+
+            # 优先用 problem_detail 里带 P/时间段的详细原因
+            chosen = next(
+                (
+                    detail
+                    for detail in problem_details
+                    if detail.get("reason")
+                    and (
+                        detail.get("type") == "video"
+                        or "P" in detail["reason"]
+                        or detail.get("violation_time")
+                    )
+                ),
+                problem_details[0] if problem_details else None,
+            )
+
+            archive_reason = str(archive.get("reject_reason") or "").strip()
+            reject_reason = (
+                (chosen or {}).get("reason") or archive_reason
+            )
             if kind == "rejected" and reject_reason:
                 message = f"{message}：{reject_reason}"
+
             return ReviewState(
                 bvid,
                 state,
@@ -163,14 +224,21 @@ def fetch_archive_state(
                 checked_at=checked_at,
                 state_desc=str(archive.get("state_desc") or ""),
                 reject_reason=reject_reason,
-                problem_title=str(
-                    archive.get("problem_description_title") or ""
-                ).strip(),
-                problem_description=str(
-                    archive.get("problem_description") or ""
-                ).strip(),
-                modify_advise=str(archive.get("modify_advise") or "").strip(),
+                problem_title=(
+                    (chosen or {}).get("problem_title")
+                    or str(archive.get("problem_description_title") or "").strip()
+                ),
+                problem_description=(
+                    (chosen or {}).get("description")
+                    or str(archive.get("problem_description") or "").strip()
+                ),
+                modify_advise=(
+                    (chosen or {}).get("advice")
+                    or str(archive.get("modify_advise") or "").strip()
+                ),
                 reject_reason_url=str(archive.get("reject_reason_url") or "").strip(),
+                problem_details=problem_details,
+                videos=videos,
             )
 
         if len(audits) < PAGE_SIZE:

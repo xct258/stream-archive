@@ -92,12 +92,24 @@ class ReviewTest(unittest.TestCase):
                                 "state": -2,
                                 "state_desc": "退回仅自见",
                                 "title": "回放",
-                                "reject_reason": "该视频【P1(02:42:02-02:43:37)】不予审核通过",
+                                "reject_reason": "稿件中发现问题。",
                                 "problem_description_title": "关于法律法规",
                                 "problem_description": "禁止发布违法内容",
                                 "modify_advise": "建议删除或修改片段",
                                 "reject_reason_url": "http://member.bilibili.com/studio/convention/",
-                            }
+                            },
+                            "problem_detail": [
+                                {
+                                    "type": "video",
+                                    "index": 1,
+                                    "reject_reason": "该视频【P1(02:42:02-02:43:37)】不予审核通过",
+                                    "modify_advise": "建议删除或修改片段",
+                                    "problem_description_title": "关于法律法规",
+                                    "problem_description": "禁止发布违法内容",
+                                    "violation_time": "P1(02:42:02-02:43:37)",
+                                    "violation_position": "内容",
+                                }
+                            ],
                         }
                     ]
                 },
@@ -111,6 +123,10 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(state.problem_title, "关于法律法规")
         self.assertEqual(state.modify_advise, "建议删除或修改片段")
         self.assertTrue(state.reject_reason_url.startswith("http"))
+        self.assertEqual(len(state.problem_details), 1)
+        self.assertEqual(
+            state.problem_details[0]["violation_time"], "P1(02:42:02-02:43:37)"
+        )
 
     def test_fetch_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

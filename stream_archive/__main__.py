@@ -272,6 +272,22 @@ def cmd_review(config: Config, args, logger) -> int:
         print(f"修改建议：{state.modify_advise}")
     if state.reject_reason_url:
         print(f"规则链接：{state.reject_reason_url}")
+    if state.problem_details:
+        print("详细问题：")
+        for number, detail in enumerate(state.problem_details, 1):
+            print(f"  {number}. {detail.get('reason') or '-'}")
+            if detail.get("violation_time"):
+                print(f"     时间：{detail['violation_time']}")
+            if detail.get("violation_position"):
+                print(f"     位置：{detail['violation_position']}")
+            if detail.get("advice") and detail["advice"] != state.modify_advise:
+                print(f"     建议：{detail['advice']}")
+    elif state.videos:
+        print("详细问题：")
+        for video in state.videos:
+            print(
+                f"  P{video.get('index') or '-'}：{video.get('reason') or '-'}"
+            )
     if state.problem_description:
         text = state.problem_description
         if len(text) > 600:

@@ -819,13 +819,38 @@ def cleanup_archives(config: Config, logger=None) -> int:
                 if directory_date >= cutoff:
                     continue
 
-                size = _dir_size(directory)
-                shutil.rmtree(directory)
-                logger.info(
-                    "清理旧录播：%s（%s）", directory, human_size(size)
-                )
-                deleted += 1
-                total += 1
+                if archive.keep_xml:
+                    removed = 0
+                    freed = 0
+                    for path in sorted(directory.iterdir()):
+                        if not path.is_file():
+                            continue
+                        if path.suffix.lower() == ".xml":
+                            continue
+                        try:
+                            freed += path.stat().st_size
+                            path.unlink()
+                            removed += 1
+                        except OSError as exc:
+                            logger.warning("删除文件失败：%s（%s）", path, exc)
+                    if removed == 0:
+                        continue
+                    logger.info(
+                        "清理旧录播（保留 XML）：%s（删除 %s 个文件，%s）",
+                        directory,
+                        removed,
+                        human_size(freed),
+                    )
+                    deleted += 1
+                    total += 1
+                else:
+                    size = _dir_size(directory)
+                    shutil.rmtree(directory)
+                    logger.info(
+                        "清理旧录播：%s（%s）", directory, human_size(size)
+                    )
+                    deleted += 1
+                    total += 1
 
         _remove_empty_dirs(base)
 

@@ -105,6 +105,8 @@ class ArchiveConfig:
     retention_days: int = 15
     max_delete_per_run: int = 8
     delete_after_upload: bool = False
+    # 清理旧录播时只删除视频/封面等，保留 XML 弹幕
+    keep_xml: bool = False
 
 
 @dataclass
@@ -537,6 +539,7 @@ def _parse_archive(section: dict[str, Any], label: str) -> ArchiveConfig:
         retention_days=_get_int(section, label, "retention_days", 15),
         max_delete_per_run=_get_int(section, label, "max_delete_per_run", 8),
         delete_after_upload=_get_bool(section, label, "delete_after_upload", False),
+        keep_xml=_get_bool(section, label, "keep_xml", False),
     )
 
 

@@ -164,6 +164,22 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(upload_candidates(job, streamer), [encoded])
 
     # ---- 旧录播清理 ----
+    def test_cleanup_archives_keep_xml(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        streamer.archive.keep_xml = True
+
+        base = self.root / "videos" / "主播A" / "原文件" / "2000" / "01" / "2000-01-01"
+        base.mkdir(parents=True)
+        (base / "old.mp4").write_bytes(b"x")
+        (base / "old.xml").write_bytes(b"<i></i>")
+
+        deleted = cleanup_archives(self.config, LOGGER)
+
+        self.assertGreaterEqual(deleted, 1)
+        self.assertFalse((base / "old.mp4").exists())
+        self.assertTrue((base / "old.xml").exists())
+
     def test_cleanup_archives(self) -> None:
         streamer = self.config.streamer_by_id("a")
         assert streamer is not None

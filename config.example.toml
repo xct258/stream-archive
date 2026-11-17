@@ -148,6 +148,9 @@ max_delete_per_run = 8
 # 默认 false：本地保留一份，确认 B 站稿件正常后再手动清理。
 delete_after_upload = false
 
+# 清理旧录播时保留 XML 弹幕文件，只删除视频/封面/字幕等
+keep_xml = true
+
 
 [append]
 # 按月投稿：同一主播同一自然月的视频归到一个 B 站稿件。

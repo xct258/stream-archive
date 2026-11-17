@@ -101,6 +101,14 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
         name="repair-loop",
     ).start()
 
+    # 只在 watcher 启动时恢复中断任务。
+    # 不能每轮都调用：手动 once 正在压制几个小时时，会被 watcher
+    # 当成“未完成任务”再次拉起，造成重复压制和状态覆盖。
+    try:
+        resume_incomplete_jobs(config, logger)
+    except Exception:
+        logger.exception("恢复未完成任务失败")
+
     last_cleanup = 0.0
     config_mtime = config_path.stat().st_mtime
 
@@ -112,9 +120,6 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
                 config = load_config(config_path)
                 config_mtime = current_mtime
                 logger.info("配置已重新加载")
-
-            # ---- 恢复上次中断的任务 ----
-            resume_incomplete_jobs(config, logger)
 
             # ---- 处理已下播的目录 ----
             directories = discover_dirs(config)

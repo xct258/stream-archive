@@ -111,6 +111,9 @@ def job_summary(raw: dict) -> dict:
     }
     status = _job_status(list(statuses.values()))
     finished = _finished_at(steps)
+    # 运行中的任务耗时必须一直增长：只有完成/失败才定格在最后一步。
+    # 之前所有任务都用 finished，导致长步骤（如压制）期间“已耗时”不再变化。
+    elapsed_end = finished if status in ("done", "failed") else None
 
     done_count = sum(1 for value in statuses.values() if value in ("done", "skipped"))
     progress = int(done_count / len(order) * 100) if order else 100
@@ -153,7 +156,7 @@ def job_summary(raw: dict) -> dict:
             "updated_at": str(step_progress.get("updated_at") or ""),
         },
         "steps_expected": order,
-        "elapsed_seconds": _seconds_between(raw.get("created_at"), finished),
+        "elapsed_seconds": _seconds_between(raw.get("created_at"), elapsed_end),
         "finished_at": finished,
         "upload_ok": bool((outputs.get("upload") or {}).get("ok")),
         "video_id": _video_id(outputs),

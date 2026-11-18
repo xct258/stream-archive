@@ -170,6 +170,27 @@ class WebDataTest(unittest.TestCase):
         self.assertEqual(encode["progress"]["percent"], 12.0)
         self.assertEqual(encode["progress"]["detail"], "压制中")
 
+    def test_running_job_elapsed_keeps_growing(self) -> None:
+        from datetime import datetime, timedelta
+
+        now = datetime.now()
+        created = (now - timedelta(seconds=300)).strftime("%Y-%m-%d %H:%M:%S")
+        finished = (now - timedelta(seconds=240)).strftime("%Y-%m-%d %H:%M:%S")
+
+        job = self._job("demo-elapsed", {"scan": "done", "encode": "running"}, created_at=created)
+        job.steps["scan"]["finished_at"] = finished
+
+        summary = job_summary(job.to_dict())
+        # 运行中：按“现在”计算，而不是停在 scan 的完成时间
+        self.assertGreaterEqual(summary["elapsed_seconds"], 280)
+
+        # 完成/失败：定格在最后一步
+        done = self._job("demo-elapsed-done", {})
+        done.created_at = created
+        for step in STEPS:
+            done.steps[step]["finished_at"] = finished
+        self.assertEqual(job_summary(done.to_dict())["elapsed_seconds"], 60)
+
     def test_old_job_without_steps_expected(self) -> None:
         # 旧版本状态文件没有 steps_expected，只按实际步骤统计，不能被新步骤拖成 pending
         steps = {

@@ -46,9 +46,17 @@ def create_app(config: Config) -> FastAPI:
 
     @app.middleware("http")
     async def no_cache_api(request, call_next):
+        """API 和首页不缓存；静态资源每次都向服务端确认（304 即可）。
+
+        否则反向代理/浏览器缓存了旧版 index.html，会和新版 app.js 对不上，
+        页面会一直停在“加载中”。
+        """
         response = await call_next(request)
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/") or path == "/":
             response.headers["Cache-Control"] = "no-store"
+        elif path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     if WEBUI_DIR.is_dir():

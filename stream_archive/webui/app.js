@@ -1,5 +1,6 @@
 /* stream-archive 监控界面（Vue 3，无构建步骤） */
 
+function boot() {
 const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted } = Vue;
 
 const STEP_LABELS = {
@@ -929,4 +930,62 @@ const app = createApp(App);
 app.config.globalProperties.$bytes = fmtBytes;
 app.config.globalProperties.$dur = fmtDuration;
 app.config.globalProperties.$pct = fmtPercent;
+app.config.errorHandler = (err) => showBootError((err && err.message) || String(err));
 app.mount("#app");
+}
+
+
+/* ---------------- 启动兜底 ---------------- */
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function showBootError(message) {
+  const box = document.getElementById("app");
+  if (!box || box.querySelector(".boot-error")) return;
+  box.innerHTML =
+    '<div class="boot boot-error">前端加载失败：' +
+    escapeHtml(message) +
+    "<br><small>请按 Ctrl+F5 强制刷新；如果仍然失败，检查反向代理是否拦截了脚本或设置了 CSP。</small></div>";
+}
+
+function start() {
+  try {
+    boot();
+  } catch (err) {
+    showBootError((err && err.message) || String(err));
+  }
+}
+
+window.addEventListener(
+  "error",
+  (event) => {
+    const box = document.getElementById("app");
+    if (box && box.querySelector(".boot")) {
+      showBootError(event.message || "脚本执行失败");
+    }
+  },
+  true
+);
+
+if (typeof Vue !== "undefined") {
+  start();
+} else {
+  // 兼容：浏览器缓存了旧版 index.html（没有引入 Vue 脚本）时，自己补上运行时
+  const script = document.createElement("script");
+  script.src = "/assets/vue.global.prod.js";
+  script.onload = start;
+  script.onerror = () => showBootError("Vue 运行时加载失败（/assets/vue.global.prod.js）");
+  document.head.appendChild(script);
+}
+
+setTimeout(() => {
+  const box = document.getElementById("app");
+  if (box && box.querySelector(".boot")) {
+    showBootError("页面初始化超时，可能加载到的仍是旧缓存");
+  }
+}, 5000);

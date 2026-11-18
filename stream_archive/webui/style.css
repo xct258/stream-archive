@@ -37,6 +37,8 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .boot { padding: 60px 20px; text-align: center; color: var(--muted); }
+.boot-error { color: var(--red); line-height: 1.9; }
+.boot-error small { color: var(--muted); }
 
 /* ---------------- 布局 ---------------- */
 

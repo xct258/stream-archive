@@ -110,6 +110,15 @@ class WebApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("stream-archive", response.text)
 
+    def test_cache_headers(self) -> None:
+        index = self.client.get("/")
+        self.assertEqual(index.status_code, 200)
+        self.assertEqual(index.headers.get("cache-control"), "no-store")
+
+        asset = self.client.get("/assets/app.js")
+        self.assertEqual(asset.status_code, 200)
+        self.assertEqual(asset.headers.get("cache-control"), "no-cache")
+
     def test_health(self) -> None:
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)

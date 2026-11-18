@@ -14,6 +14,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Callable
 
 from .config import DanmakuConfig, EncodeConfig
 from .log import get_logger
@@ -105,6 +106,7 @@ def encode(
     encode_config: EncodeConfig,
     duration: float,
     bar_images: BarImages | None = None,
+    on_progress: Callable[[float, float, str], None] | None = None,
 ) -> None:
     """把 ASS 弹幕烧进画面，输出投稿版 MP4。
 
@@ -115,6 +117,7 @@ def encode(
         encode_config: 编码参数
         duration:      视频时长（秒），用于进度百分比和进度条定位
         bar_images:    可选的高能进度条三张图，None 表示不叠加
+        on_progress:   可选进度回调 (百分比, 已处理秒数, 速度文本)
 
     异常：
         DanmakuError: QSV 和 CPU 都失败
@@ -125,7 +128,14 @@ def encode(
     if encode_config.try_qsv and DRI_PATH.exists():
         logger.info("尝试 Intel QSV 硬件编码")
         if _run_encode(
-            video, ass_path, output, encode_config, duration, encoder="qsv", bar_images=bar_images
+            video,
+            ass_path,
+            output,
+            encode_config,
+            duration,
+            encoder="qsv",
+            bar_images=bar_images,
+            on_progress=on_progress,
         ):
             return
         logger.warning("QSV 编码失败，删除半成品并回退 CPU")
@@ -137,7 +147,14 @@ def encode(
         encode_config.preset,
     )
     if not _run_encode(
-        video, ass_path, output, encode_config, duration, encoder="cpu", bar_images=bar_images
+        video,
+        ass_path,
+        output,
+        encode_config,
+        duration,
+        encoder="cpu",
+        bar_images=bar_images,
+        on_progress=on_progress,
     ):
         raise DanmakuError(f"视频压制失败：{video.name}")
 
@@ -154,6 +171,7 @@ def _run_encode(
     *,
     encoder: str,
     bar_images: BarImages | None = None,
+    on_progress: Callable[[float, float, str], None] | None = None,
 ) -> bool:
     """执行一次 ffmpeg 编码，成功返回 True。
 
@@ -230,6 +248,7 @@ def _run_encode(
     )
 
     last_report = 0.0
+    last_callback = 0.0
     out_time = 0.0
     speed = ""
     error_lines: list[str] = []
@@ -259,8 +278,21 @@ def _run_encode(
             if len(error_lines) > 20:
                 error_lines.pop(0)
 
-        # ---- 每 30 秒汇报一次 ----
         now = time.monotonic()
+
+        # ---- 进度回调：网页用，最多每 2 秒一次 ----
+        if duration > 0 and on_progress is not None and now - last_callback >= 2:
+            last_callback = now
+            try:
+                on_progress(
+                    min(100.0, out_time / duration * 100),
+                    out_time,
+                    speed,
+                )
+            except Exception:  # 进度上报失败不能中断压制
+                logger.debug("进度回调失败", exc_info=True)
+
+        # ---- 每 30 秒写一次日志 ----
         if duration > 0 and now - last_report >= 30:
             last_report = now
             percent = min(100.0, out_time / duration * 100)

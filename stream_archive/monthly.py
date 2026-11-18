@@ -129,9 +129,16 @@ def candidates(job: Job, source: str) -> list[Path]:
 
 
 def step_append_monthly(
-    config: Config, streamer: StreamerConfig, job: Job, logger=None
+    config: Config,
+    streamer: StreamerConfig,
+    job: Job,
+    logger=None,
+    on_progress=None,
 ) -> tuple[str, bool]:
-    """把本场视频追加到月稿件；返回 (说明, 是否跳过)。"""
+    """把本场视频追加到月稿件；返回 (说明, 是否跳过)。
+
+    on_progress(已追加数, 本任务文件总数, 文件名) 用于网页显示分P进度。
+    """
     logger = logger or get_logger("stream_archive.monthly")
     append_config = streamer.append
 
@@ -159,6 +166,11 @@ def step_append_monthly(
 
     pending = [file for file in files if file.name not in done]
     if not pending:
+        if on_progress is not None:
+            try:
+                on_progress(len(files), len(files), "")
+            except Exception:
+                pass
         return f"{month} 的 {len(files)} 个文件已全部追加（{vid}）", True
 
     # 追加前记录分P数量：审核通过后用它核对追加是否真的生效
@@ -213,6 +225,11 @@ def step_append_monthly(
         info["done"].append(first.name)
         done.add(first.name)
         save_job(config.general.data_dir, job)
+        if on_progress is not None:
+            try:
+                on_progress(len(done), len(files), first.name)
+            except Exception:
+                pass
 
         created = True
         pending = pending[1:]
@@ -225,6 +242,11 @@ def step_append_monthly(
         info["done"].append(file.name)
         done.add(file.name)
         save_job(config.general.data_dir, job)
+        if on_progress is not None:
+            try:
+                on_progress(len(done), len(files), file.name)
+            except Exception:
+                pass
 
     # 记录追加完成时间：审核观察期从这里开始算，而不是任务创建时间
     info["finished_at"] = int(time.time())

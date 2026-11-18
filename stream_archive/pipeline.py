@@ -30,7 +30,7 @@ from .media import (
     remux_to_mp4,
 )
 from .asr import step_transcribe
-from .monthly import step_append_monthly
+from .monthly import step_append_monthly as _append_monthly_step
 from .progress_bar import build_images
 from .state import (
     STEPS,
@@ -45,6 +45,7 @@ from .state import (
     load_job,
     save_job,
     skip,
+    update_step_progress,
 )
 from .upload import extract_bvid, render_desc, render_title, upload
 from .util import ensure_dir, human_size
@@ -64,6 +65,63 @@ GAP_TOLERANCE = 1.0
 
 # 每个步骤返回 (说明, 是否跳过)
 StepResult = tuple[str, bool]
+
+
+class StepProgress:
+    """把步骤进度节流写进任务状态，供网页实时显示。
+
+    写盘前重新读任务文件，只更新当前步骤的 progress/detail，
+    不会覆盖审核线程同时写入的 outputs。
+    """
+
+    def __init__(self, config: Config, job: Job, step: str, logger, min_interval: float = 5.0):
+        self.config = config
+        self.job = job
+        self.step = step
+        self.logger = logger
+        self.min_interval = min_interval
+        self._last_saved = 0.0
+        self._last_percent = -1000.0
+
+    def update(
+        self,
+        percent: float | None,
+        detail: str | None = None,
+        **extra,
+    ) -> None:
+        now = time.time()
+        if percent is not None:
+            if (
+                abs(percent - self._last_percent) < 1.0
+                and now - self._last_saved < self.min_interval
+            ):
+                return
+        elif now - self._last_saved < self.min_interval:
+            return
+
+        self._last_saved = now
+        if percent is not None:
+            self._last_percent = percent
+        try:
+            update_step_progress(
+                self.config.general.data_dir,
+                self.job,
+                self.step,
+                percent,
+                detail,
+                extra or None,
+            )
+        except Exception:
+            self.logger.debug("写入步骤进度失败", exc_info=True)
+
+
+def _clock(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
 
 
 # ---------------------------------------------------------------------------
@@ -449,18 +507,19 @@ def step_remux(
     if not flv_files:
         return "没有需要封装的 FLV", True
 
+    progress = StepProgress(config, job, "remux", logger)
+    total = len(flv_files)
     done = 0
-    for flv_path in flv_files:
+    for index, flv_path in enumerate(flv_files, start=1):
         mp4_path = flv_path.with_suffix(".mp4")
         # 断点续跑：上次已经封装成功，直接删掉 FLV
         if mp4_path.is_file() and mp4_path.stat().st_size > 0:
             flv_path.unlink(missing_ok=True)
-            done += 1
-            continue
-
-        remux_to_mp4(flv_path, mp4_path)
-        flv_path.unlink(missing_ok=True)
+        else:
+            remux_to_mp4(flv_path, mp4_path)
+            flv_path.unlink(missing_ok=True)
         done += 1
+        progress.update(index / total * 100, f"封装 {index}/{total}：{flv_path.stem}")
 
     return f"封装 {done} 个 FLV", False
 
@@ -486,7 +545,9 @@ def step_duration_check(
         raise RuntimeError("没有 MP4 文件可校验")
 
     pairs = []
-    for video in videos:
+    progress = StepProgress(config, job, "duration_check", logger)
+    total = len(videos)
+    for index, video in enumerate(videos, start=1):
         xml_path = video.with_suffix(".xml")
         entry = {"video": video.name, "xml": xml_path.name, "ok": False, "reason": ""}
 
@@ -530,6 +591,7 @@ def step_duration_check(
         if not entry["ok"]:
             logger.warning("跳过压制：%s（%s）", video.name, entry["reason"])
         pairs.append(entry)
+        progress.update(index / total * 100, f"校验 {index}/{total}：{video.name}")
 
     job.outputs["pairs"] = pairs
     passed = sum(1 for pair in pairs if pair["ok"])
@@ -559,10 +621,12 @@ def step_encode(
             continue
 
         bar_images = None
+        progress = StepProgress(config, job, "encode", logger)
         try:
             ass_path = xml_to_ass(xml_path, streamer.danmaku)
             output = work_dir / f"投稿版-{video.name}"
             info = probe(video)
+            progress.update(0, f"开始压制：{video.name}")
 
             # 可选高能进度条：生成失败不阻塞压制，退化为普通投稿版
             if streamer.encode.progress_bar:
@@ -581,7 +645,35 @@ def step_encode(
                     logger.warning("高能进度条生成失败，改为无进度条压制：%s", exc)
                     bar_images = None
 
-            encode(video, ass_path, output, streamer.encode, info.duration, bar_images)
+            def _on_encode_progress(
+                percent: float, out_time: float, speed: str
+            ) -> None:
+                eta = None
+                try:
+                    factor = float(str(speed).rstrip("x"))
+                except (TypeError, ValueError):
+                    factor = 0.0
+                if factor > 0 and info.duration > out_time:
+                    eta = int((info.duration - out_time) / factor)
+                progress.update(
+                    percent,
+                    f"{_clock(out_time)} / {_clock(info.duration)}，速度 {speed or '未知'}",
+                    speed=speed or "",
+                    processed_seconds=round(out_time, 1),
+                    total_seconds=round(info.duration, 1),
+                    eta_seconds=eta,
+                )
+
+            encode(
+                video,
+                ass_path,
+                output,
+                streamer.encode,
+                info.duration,
+                bar_images,
+                on_progress=_on_encode_progress,
+            )
+            progress.update(100, f"压制完成：{output.name}", eta_seconds=0)
             encoded.append(str(output))
         except Exception as exc:
             logger.error("压制失败：%s（%s）", video.name, exc)
@@ -649,6 +741,8 @@ def step_upload(
     )
     cover_path = Path(cover_info["path"]) if cover_info.get("path") else None
 
+    progress = StepProgress(config, job, "upload", logger)
+    progress.update(None, f"biliup 上传中（{len(files)} 个文件）")
     result = upload(
         streamer.upload,
         files,
@@ -667,11 +761,33 @@ def step_upload(
     }
     if not result.ok:
         raise RuntimeError(f"投稿失败：{result.detail[-300:]}")
+    progress.update(100, "投稿完成")
     if bvid:
         logger.info("投稿 BV：%s", bvid)
 
     suffix = f"（{bvid}）" if bvid else ""
     return f"投稿成功：{title}{suffix}", False
+
+
+def step_append_monthly(
+    config: Config, streamer: StreamerConfig, job: Job, logger
+) -> StepResult:
+    """按月追加，并把“已追加/总数”写进步骤进度。"""
+    progress = StepProgress(config, job, "append_monthly", logger)
+
+    def _on_progress(done_count: int, total: int, name: str) -> None:
+        percent = done_count / total * 100 if total else 100.0
+        detail = f"追加 {done_count}/{total}"
+        if name:
+            detail += f"：{name}"
+        progress.update(percent, detail)
+
+    detail, skipped = _append_monthly_step(
+        config, streamer, job, logger, on_progress=_on_progress
+    )
+    if not skipped:
+        progress.update(100, detail)
+    return detail, skipped
 
 
 def upload_candidates(job: Job, streamer: StreamerConfig) -> list[Path]:

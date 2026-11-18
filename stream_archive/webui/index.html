@@ -8,30 +8,8 @@
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">▣</span>
-      <a href="#/">stream-archive</a>
-      <span id="server-name" class="server"></span>
-    </div>
-    <div class="health">
-      <span id="watcher-dot" class="dot"></span>
-      <span id="watcher-text">检查中…</span>
-      <span id="updated-at" class="muted"></span>
-    </div>
-  </header>
-
-  <nav class="tabs">
-    <a href="#/" data-nav="dashboard">总览</a>
-    <a href="#/jobs" data-nav="jobs">任务</a>
-    <a href="#/logs" data-nav="logs">日志</a>
-  </nav>
-
-  <main id="app" class="page">
-    <div class="loading">加载中…</div>
-  </main>
-
-  <div id="toast" class="toast hidden"></div>
+  <div id="app"><div class="boot">加载中…</div></div>
+  <script src="/assets/vue.global.prod.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

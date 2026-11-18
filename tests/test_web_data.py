@@ -145,6 +145,31 @@ class WebDataTest(unittest.TestCase):
         self.assertEqual(summary["status"], "running")
         self.assertEqual(summary["current_step"], "remux")
 
+    def test_job_summary_step_progress(self) -> None:
+        job = self._job("demo-step", {"scan": "done", "encode": "running"})
+        job.steps["encode"]["progress"] = {
+            "percent": 42.5,
+            "detail": "1:00:00 / 2:00:00，速度 0.9x",
+            "speed": "0.9x",
+            "eta_seconds": 4800,
+        }
+        summary = job_summary(job.to_dict())
+
+        self.assertEqual(summary["current_step"], "encode")
+        self.assertEqual(summary["current_step_progress"]["percent"], 42.5)
+        self.assertEqual(summary["current_step_progress"]["speed"], "0.9x")
+        self.assertEqual(summary["current_step_progress"]["eta_seconds"], 4800)
+        # 总进度仍保留，供兼容和整体判断
+        self.assertEqual(summary["progress"], int((len(STEPS) - 1) / len(STEPS) * 100))
+
+    def test_job_detail_step_progress(self) -> None:
+        job = self._job("demo-step-detail", {"encode": "running"})
+        job.steps["encode"]["progress"] = {"percent": 12.0, "detail": "压制中"}
+        detail = job_detail(job.to_dict())
+        encode = next(step for step in detail["steps"] if step["name"] == "encode")
+        self.assertEqual(encode["progress"]["percent"], 12.0)
+        self.assertEqual(encode["progress"]["detail"], "压制中")
+
     def test_old_job_without_steps_expected(self) -> None:
         # 旧版本状态文件没有 steps_expected，只按实际步骤统计，不能被新步骤拖成 pending
         steps = {

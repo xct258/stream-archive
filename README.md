@@ -43,7 +43,7 @@
 ```
 .
 ├── stream_archive/           # Python 实现
-│   └── webui/                # 监控界面（原生 HTML/CSS/JS）
+│   └── webui/                # 监控界面（Vue 3 静态文件，无构建步骤）
 ├── tests/                    # 标准库 unittest
 ├── config.example.toml       # 配置示例
 ├── install/                  # 模板：构建期依赖与安装
@@ -390,9 +390,10 @@ record_cookie_json = "/data/cookies/bilibili/cookies-录播账号.json"
 - 修改房间号后，`sync` 会更新 `config.json`，但录播姬进程需要重启才会加载新房间（`docker compose restart`）；
 - 镜像构建时 `INSTALL_RECORDER=true`（默认）会下载录播姬；`RECORDER_VERSION` 可固定版本。
 
-## 监控界面（M1）
+## 监控界面
 
-FastAPI + 原生 JS，不经过前端构建。默认只读，操作类功能在后续阶段加入。
+FastAPI + Vue 3，Vue 运行时随包一起提供（`webui/vue.global.prod.js`），
+不依赖 CDN、也不需要前端构建。默认只读，操作类功能在后续阶段加入。
 
 ```toml
 [web]
@@ -404,10 +405,16 @@ refresh_seconds = 5
 
 页面：
 
-- **总览**：watcher 心跳、磁盘、任务统计、录制目录、最近任务
+- **总览**：watcher 心跳、磁盘、任务统计、正在处理的任务、录制目录、最近任务
 - **任务**：按状态/主播/关键字筛选，点击进入详情
-- **任务详情**：逐步状态、耗时、封面、产物列表、任务日志
-- **日志**：主日志和 service 日志，支持 tail 和自动刷新
+- **任务详情**：当前步骤进度（压制百分比、速度、预计剩余）、逐步状态、耗时、封面、产物列表、任务日志
+- **日志**：左侧日志列表 + 右侧内容，支持 tail 和自动刷新
+
+进度口径：
+
+- 列表和详情以大号进度条显示**当前步骤**的进度（例如压制 42%），而不是整体步骤完成度；
+- 无法量化的步骤（如 biliup 上传）显示流动的“不确定进度”条；
+- 整体步骤进度仍保留在详情页的元信息里，方便判断任务走到哪一步。
 
 认证不在 Web 内做，推荐用 Nginx/Caddy 加 Basic Auth 或统一登录。注意 `network_mode: host` 下端口会直接暴露在宿主机。
 

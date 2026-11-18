@@ -18,6 +18,7 @@ from stream_archive.state import (
     reset_running,
     save_job,
     skip,
+    update_step_progress,
 )
 
 
@@ -81,3 +82,28 @@ class StateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_update_step_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            data_dir = Path(temp)
+            job = make_job()
+            begin(job, "encode")
+            save_job(data_dir, job)
+
+            update_step_progress(
+                data_dir,
+                job,
+                "encode",
+                42.5,
+                "1:00:00 / 2:00:00，速度 0.9x",
+                {"speed": "0.9x", "eta_seconds": 4800},
+            )
+
+            reloaded = load_job(data_dir / "jobs" / f"{job.id}.json")
+            progress = reloaded.steps["encode"]["progress"]
+            self.assertEqual(progress["percent"], 42.5)
+            self.assertEqual(progress["speed"], "0.9x")
+            self.assertEqual(progress["eta_seconds"], 4800)
+            self.assertEqual(job.steps["encode"]["progress"]["percent"], 42.5)
+            # 不能改变步骤状态
+            self.assertEqual(reloaded.steps["encode"]["status"], "running")

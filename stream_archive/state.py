@@ -246,6 +246,44 @@ def load_job(path: Path) -> Job:
     return Job.from_dict(read_json(path))
 
 
+def update_step_progress(
+    data_dir: Path,
+    job: Job,
+    step: str,
+    percent: float | None,
+    detail: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把某一步的实时进度写进状态文件，并同步到内存里的 job。
+
+    先重新读盘再写，只改 steps[step] 的 progress/detail，
+    避免覆盖审核/修复线程同时更新的 outputs。
+    percent=None 表示无法量化（网页显示为不确定进度）。
+    """
+    progress: dict[str, Any] = {"updated_at": now_text()}
+    if percent is not None:
+        progress["percent"] = round(max(0.0, min(100.0, float(percent))), 1)
+    if detail:
+        progress["detail"] = detail
+    if extra:
+        progress.update({key: value for key, value in extra.items() if value is not None})
+
+    with JOB_LOCK:
+        path = job_file(data_dir, job.id)
+        disk = load_job(path)
+        info = disk.steps.setdefault(step, {})
+        info["progress"] = progress
+        if detail:
+            info["detail"] = detail
+        save_job(data_dir, disk)
+
+    memory = job.steps.setdefault(step, {})
+    memory["progress"] = progress
+    if detail:
+        memory["detail"] = detail
+    return progress
+
+
 def list_jobs(data_dir: Path) -> list[Job]:
     """按创建时间倒序返回所有任务。"""
     job_dir = data_dir / "jobs"

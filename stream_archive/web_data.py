@@ -115,6 +115,16 @@ def job_summary(raw: dict) -> dict:
     done_count = sum(1 for value in statuses.values() if value in ("done", "skipped"))
     progress = int(done_count / len(order) * 100) if order else 100
 
+    current_step = _current_step(statuses, order)
+    current_info = steps.get(current_step) or {}
+    current_status = statuses.get(current_step, "")
+    step_progress = current_info.get("progress") or {}
+    step_percent = step_progress.get("percent")
+    if status == "done":
+        step_percent = 100
+    elif current_status == "pending" and step_percent is None:
+        step_percent = 0
+
     cover = (outputs.get("cover") or {}).get("path") or ""
     cover_url = f"/api/jobs/{raw.get('id')}/cover" if cover and Path(cover).is_file() else ""
     asr_done = len((outputs.get("asr") or {}).get("done") or [])
@@ -131,8 +141,17 @@ def job_summary(raw: dict) -> dict:
         "start_time": raw.get("start_time", ""),
         "created_at": raw.get("created_at", ""),
         "status": status,
-        "current_step": _current_step(statuses, order),
+        "current_step": current_step,
         "progress": progress,
+        "current_step_progress": {
+            "percent": step_percent,
+            "detail": str(step_progress.get("detail") or current_info.get("detail") or ""),
+            "speed": str(step_progress.get("speed") or ""),
+            "eta_seconds": step_progress.get("eta_seconds"),
+            "processed_seconds": step_progress.get("processed_seconds"),
+            "total_seconds": step_progress.get("total_seconds"),
+            "updated_at": str(step_progress.get("updated_at") or ""),
+        },
         "steps_expected": order,
         "elapsed_seconds": _seconds_between(raw.get("created_at"), finished),
         "finished_at": finished,
@@ -179,6 +198,7 @@ def job_detail(raw: dict) -> dict:
                 "started_at": started or "",
                 "finished_at": finished or "",
                 "duration_seconds": _seconds_between(started, finished) if started else 0,
+                "progress": info.get("progress") or {},
             }
         )
 

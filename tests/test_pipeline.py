@@ -12,10 +12,13 @@ from datetime import date
 from pathlib import Path
 
 from stream_archive.config import load_config
+from unittest import mock
+
 from stream_archive.pipeline import (
     archive_dirs,
     cleanup_archives,
     find_streamer,
+    step_duration_check,
     step_scan,
     upload_candidates,
 )
@@ -162,6 +165,63 @@ class PipelineTest(unittest.TestCase):
         job.outputs["encoded"] = [str(encoded)]
 
         self.assertEqual(upload_candidates(job, streamer), [encoded])
+
+    # ---- 时长校验 ----
+    def _duration_job(self) -> Job:
+        work_dir = self.root / "work"
+        work_dir.mkdir(parents=True)
+        (work_dir / "v.mp4").write_bytes(b"x")
+        (work_dir / "v.xml").write_bytes(b"<i></i>")
+        return Job(
+            id="t",
+            streamer_id="a",
+            platform="录播姬",
+            streamer="主播A",
+            stream_title="标题",
+            start_time="2026年11月17日19点55分29秒",
+            source_dir="",
+            work_dir=str(work_dir),
+        )
+
+    def test_duration_check_allows_trailing_danmaku(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        job = self._duration_job()
+
+        with mock.patch("stream_archive.pipeline.duration_diff", return_value=-36.8), \
+             mock.patch("stream_archive.pipeline.max_packet_gap", return_value=0.067):
+            detail, skipped = step_duration_check(self.config, streamer, job, LOGGER)
+
+        self.assertFalse(skipped)
+        self.assertEqual(detail, "1/1 个视频通过时长校验")
+        self.assertTrue(job.outputs["pairs"][0]["ok"])
+        self.assertEqual(job.outputs["pairs"][0]["trailing"], 36.8)
+
+    def test_duration_check_rejects_internal_gap(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        job = self._duration_job()
+
+        with mock.patch("stream_archive.pipeline.duration_diff", return_value=-36.8), \
+             mock.patch("stream_archive.pipeline.max_packet_gap", return_value=42.0):
+            detail, _ = step_duration_check(self.config, streamer, job, LOGGER)
+
+        self.assertEqual(detail, "0/1 个视频通过时长校验")
+        pair = job.outputs["pairs"][0]
+        self.assertFalse(pair["ok"])
+        self.assertIn("断流", pair["reason"])
+
+    def test_duration_check_rejects_long_video(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        job = self._duration_job()
+
+        with mock.patch("stream_archive.pipeline.duration_diff", return_value=600.0), \
+             mock.patch("stream_archive.pipeline.max_packet_gap", return_value=0.0) as gap:
+            detail, _ = step_duration_check(self.config, streamer, job, LOGGER)
+
+        self.assertEqual(detail, "0/1 个视频通过时长校验")
+        gap.assert_not_called()
 
     # ---- 旧录播清理 ----
     def test_cleanup_archives_keep_xml(self) -> None:

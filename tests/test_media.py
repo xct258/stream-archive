@@ -10,7 +10,12 @@ import unittest
 from pathlib import Path
 
 from stream_archive.danmaku import escape_filter_path
-from stream_archive.media import format_time_cn, last_danmaku_seconds, parse_recording_name
+from stream_archive.media import (
+    format_time_cn,
+    last_danmaku_seconds,
+    max_pts_gap,
+    parse_recording_name,
+)
 
 XML_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 <i>
@@ -41,6 +46,11 @@ class MediaTest(unittest.TestCase):
     def test_parse_rejects_bad_name(self) -> None:
         with self.assertRaises(ValueError):
             parse_recording_name("random.flv")
+
+    def test_max_pts_gap(self) -> None:
+        self.assertEqual(max_pts_gap([]), 0.0)
+        self.assertEqual(max_pts_gap([0.0]), 0.0)
+        self.assertAlmostEqual(max_pts_gap([0.0, 0.016, 0.032, 5.0, 5.016]), 4.968)
 
     def test_last_danmaku_seconds(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

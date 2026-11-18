@@ -23,6 +23,7 @@ from .log import attach_job_log, detach_job_log, get_logger
 from .media import (
     CoverInfo,
     duration_diff,
+    max_packet_gap,
     parse_recording_name,
     pick_cover,
     probe,
@@ -51,6 +52,13 @@ from .webdav import step_upload_danmaku
 
 # 小于这个大小的视频视为录制碎片，整组（视频+XML）删除
 SMALL_FILE_BYTES = 10 * 1024 * 1024
+
+# 录播姬分段切换时，旧文件的弹幕可能比视频多出几十秒。
+# 这个范围内的“视频更短”先做断流检测，不直接判失败。
+TRAILING_DANMAKU_TOLERANCE = 300.0
+
+# 相邻视频包 PTS 超过这个间隔，视为录制中间断流（弹幕会错位）。
+GAP_TOLERANCE = 1.0
 
 # 步骤顺序；retry 时从失败步骤开始重置
 
@@ -450,6 +458,10 @@ def step_duration_check(
 
     差值过大通常意味着录制分段、网络波动或弹幕文件不完整，
     此时强行压制会出现弹幕整体偏移，所以直接跳过这一P。
+
+    例外：录播姬按文件分段时，旧文件的弹幕往往比视频多出几十秒
+    （弹幕写到切换那一刻，视频先停）。只要视频内部没有断流，
+    弹幕时间轴就是对齐的，尾部那些弹幕本来就不会显示，可以正常压制。
     """
     if not streamer.danmaku.enabled:
         return "弹幕压制已关闭，跳过时长校验", True
@@ -477,12 +489,29 @@ def step_duration_check(
                 entry["reason"] = "无法解析弹幕时间"
             elif diff is not None:
                 entry["diff"] = round(diff, 3)
-                if abs(diff) > streamer.danmaku.max_diff_seconds:
-                    entry["reason"] = (
-                        f"时间差 {diff:+.1f}s 超过 {streamer.danmaku.max_diff_seconds}s"
-                    )
-                else:
+                limit = streamer.danmaku.max_diff_seconds
+                if abs(diff) <= limit:
                     entry["ok"] = True
+                elif diff < 0 and -diff <= TRAILING_DANMAKU_TOLERANCE:
+                    try:
+                        gap = max_packet_gap(video, stop_at=GAP_TOLERANCE)
+                    except Exception as exc:
+                        entry["reason"] = f"断流检测失败：{exc}"
+                    else:
+                        if gap < GAP_TOLERANCE:
+                            entry["ok"] = True
+                            entry["trailing"] = round(-diff, 1)
+                            logger.info(
+                                "视频比弹幕短 %.1fs，但视频内部无断流，按正常分段压制：%s",
+                                -diff,
+                                video.name,
+                            )
+                        else:
+                            entry["reason"] = f"视频中间断流 {gap:.1f}s，弹幕会错位"
+                else:
+                    entry["reason"] = (
+                        f"时间差 {diff:+.1f}s 超过 {limit}s"
+                    )
 
         if not entry["ok"]:
             logger.warning("跳过压制：%s（%s）", video.name, entry["reason"])

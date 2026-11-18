@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .log import get_logger
 from .state import date_parts
@@ -233,6 +234,61 @@ def duration_diff(video: Path, xml: Path) -> float | None:
     if last is None:
         return None
     return probe(video).duration - last
+
+
+def max_pts_gap(values: Iterable[float]) -> float:
+    """返回一串 PTS 里相邻值的最大间隔（秒）。"""
+    gap = 0.0
+    previous: float | None = None
+    for value in values:
+        if previous is not None and value - previous > gap:
+            gap = value - previous
+        previous = value
+    return gap
+
+
+def max_packet_gap(video: Path, *, stop_at: float = 1.0) -> float:
+    """返回视频流相邻包 PTS 的最大间隔，用于判断录制中间是否断流。
+
+    只读包头，不解码。正常录制是连续的；网络波动/掉帧会在 PTS 上留下
+    明显跳变，此时弹幕会和画面错位。找到 >= stop_at 的间隔就提前退出。
+    """
+    cmd = [
+        FFPROBE,
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "packet=pts_time",
+        "-of", "csv=p=0",
+        str(video),
+    ]
+    gap = 0.0
+    previous: float | None = None
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            value = line.strip().strip(",")
+            if not value:
+                continue
+            try:
+                pts = float(value)
+            except ValueError:
+                continue
+            if previous is not None and pts - previous > gap:
+                gap = pts - previous
+                if gap >= stop_at:
+                    break
+            previous = pts
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+    return gap
 
 
 def format_time_cn(seconds: float) -> str:

@@ -19,6 +19,7 @@ from stream_archive.pipeline import (
     cleanup_archives,
     find_streamer,
     process_source_dir,
+    step_archive,
     step_duration_check,
     step_scan,
     upload_candidates,
@@ -223,6 +224,36 @@ class PipelineTest(unittest.TestCase):
 
         self.assertEqual(detail, "0/1 个视频通过时长校验")
         gap.assert_not_called()
+
+    def test_archive_moves_txt_and_removes_work(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        work = self.root / "work" / "主播A" / "2026年11月13日19点56分57秒"
+        work.mkdir(parents=True)
+        (work / "v.mp4").write_bytes(b"x")
+        (work / "v.xml").write_text("<i/>", encoding="utf-8")
+        (work / "v.txt").write_text("recorder log", encoding="utf-8")
+        (work / "v.ass").write_text("ass", encoding="utf-8")
+
+        job = Job(
+            id="a-20261113_195657",
+            streamer_id="a",
+            platform="录播姬",
+            streamer="主播A",
+            stream_title="标题",
+            start_time="2026年11月13日19点56分57秒",
+            source_dir="",
+            work_dir=str(work),
+        )
+
+        detail, skipped = step_archive(self.config, streamer, job, LOGGER)
+        self.assertFalse(skipped)
+        self.assertIn("原文件 3 个", detail)
+
+        raw = self.root / "videos" / "主播A" / "原文件" / "2026" / "11" / "2026-11-13"
+        self.assertTrue((raw / "v.txt").is_file())
+        self.assertFalse((raw / "v.ass").exists())
+        self.assertFalse(work.exists())
 
     # ---- 旧录播清理 ----
     def test_cleanup_only_when_new_job_starts(self) -> None:

@@ -834,7 +834,8 @@ def step_archive(
         pressed_moved.append(target)
 
     raw_moved: list[Path] = []
-    for suffix in ("*.mp4", "*.flv", "*.xml"):
+    # .txt 是录播姬的问题记录，和原文件一起归档，避免 work 留下空壳目录
+    for suffix in ("*.mp4", "*.flv", "*.xml", "*.txt"):
         for path in sorted(work_dir.glob(suffix)):
             ensure_dir(raw_dir)
             target = raw_dir / path.name

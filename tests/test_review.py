@@ -15,6 +15,7 @@ from stream_archive.review import (
     fetch_archive_state,
     find_bvid,
     refresh_pending_reviews,
+    verify_append_pages,
     wait_for_review,
 )
 from stream_archive.state import Job, job_file, load_job, save_job
@@ -311,3 +312,48 @@ class ReviewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AppendPageTest(unittest.TestCase):
+    def _job(self, before: int | None = 22, done: int = 2):
+        class FakeJob:
+            def __init__(self) -> None:
+                self.outputs = {
+                    "append": {"done": [f"f{i}" for i in range(done)]},
+                    "append_review": {"kind": "published"},
+                }
+                if before is not None:
+                    self.outputs["append"]["pages_before"] = before
+        return FakeJob()
+
+    def test_verify_append_pages_ok(self) -> None:
+        job = self._job()
+        with patch("stream_archive.review.fetch_page_count", return_value=24):
+            self.assertTrue(
+                verify_append_pages(job, Path("/tmp/cookies.json"), "BV1xx", None, now=1000.0)
+            )
+        record = job.outputs["append_review"]
+        self.assertEqual(record["pages"], 24)
+        self.assertEqual(record["pages_expected"], 24)
+        self.assertNotIn("page_mismatch", record)
+
+    def test_verify_append_pages_mismatch_then_throttled(self) -> None:
+        job = self._job()
+        with patch("stream_archive.review.fetch_page_count", return_value=23) as fetch:
+            self.assertFalse(
+                verify_append_pages(job, Path("/tmp/cookies.json"), "BV1xx", None, now=1000.0)
+            )
+            self.assertTrue(job.outputs["append_review"]["page_mismatch"])
+            # 一小时内的重复检查直接用缓存结果，不再请求接口
+            self.assertFalse(
+                verify_append_pages(job, Path("/tmp/cookies.json"), "BV1xx", None, now=1100.0)
+            )
+            self.assertEqual(fetch.call_count, 1)
+
+    def test_verify_append_pages_without_baseline(self) -> None:
+        job = self._job(before=None)
+        with patch("stream_archive.review.fetch_page_count") as fetch:
+            self.assertTrue(
+                verify_append_pages(job, Path("/tmp/cookies.json"), "BV1xx", None, now=1000.0)
+            )
+            fetch.assert_not_called()

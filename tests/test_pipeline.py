@@ -22,7 +22,7 @@ from stream_archive.pipeline import (
     step_scan,
     upload_candidates,
 )
-from stream_archive.state import Job
+from stream_archive.state import Job, save_job
 
 CONFIG_TEMPLATE = """
 [general]
@@ -224,6 +224,36 @@ class PipelineTest(unittest.TestCase):
         gap.assert_not_called()
 
     # ---- 旧录播清理 ----
+    def test_cleanup_keeps_unreviewed_job(self) -> None:
+        base = self.root / "videos" / "主播A" / "原文件" / "2000" / "01" / "2000-01-01"
+        base.mkdir(parents=True)
+        (base / "old.mp4").write_bytes(b"x")
+
+        job = Job(
+            id="a-20000101_190000",
+            streamer_id="a",
+            platform="录播姬",
+            streamer="主播A",
+            stream_title="标题",
+            start_time="2000年01月01日19点00分00秒",
+            source_dir="",
+            work_dir=str(self.root / "work" / "主播A" / "x"),
+        )
+        job.outputs["review"] = {"kind": "reviewing"}
+        data_dir = Path(self.config.general.data_dir)
+        save_job(data_dir, job)
+
+        deleted = cleanup_archives(self.config, LOGGER)
+        self.assertEqual(deleted, 0)
+        self.assertTrue((base / "old.mp4").exists())
+
+        # 审核通过后不再保护，下一轮正常删除
+        job.outputs["review"] = {"kind": "published"}
+        save_job(data_dir, job)
+        deleted = cleanup_archives(self.config, LOGGER)
+        self.assertGreaterEqual(deleted, 1)
+        self.assertFalse((base / "old.mp4").exists())
+
     def test_cleanup_archives_keep_xml(self) -> None:
         streamer = self.config.streamer_by_id("a")
         assert streamer is not None

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from .config import AppendConfig, Config, StreamerConfig
 from .log import get_logger
+from .review import fetch_page_count
 from .state import Job, date_parts, save_job
 from .upload import append, extract_bvid, list_recent_vid, upload
 from .util import atomic_write_text, ensure_dir
@@ -159,6 +160,16 @@ def step_append_monthly(
     pending = [file for file in files if file.name not in done]
     if not pending:
         return f"{month} 的 {len(files)} 个文件已全部追加（{vid}）", True
+
+    # 追加前记录分P数量：审核通过后用它核对追加是否真的生效
+    if "pages_before" not in info:
+        if not vid:
+            info["pages_before"] = 0
+        else:
+            pages = fetch_page_count(streamer.upload.cookies, vid)
+            if pages is not None:
+                info["pages_before"] = pages
+                save_job(config.general.data_dir, job)
 
     created = False
     if not vid:

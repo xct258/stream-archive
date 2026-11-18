@@ -59,9 +59,6 @@ from .state import (
 )
 from .util import ensure_dir
 
-# 清理旧录播的间隔（秒）。守护进程每小时跑一次即可。
-CLEANUP_INTERVAL = 3600
-
 # 刷新投稿审核状态的间隔（秒）
 REVIEW_INTERVAL = 900
 
@@ -109,7 +106,6 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
     except Exception:
         logger.exception("恢复未完成任务失败")
 
-    last_cleanup = 0.0
     config_mtime = config_path.stat().st_mtime
 
     while True:
@@ -123,17 +119,20 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
 
             # ---- 处理已下播的目录 ----
             directories = discover_dirs(config)
+            ready: list[Path] = []
             for directory in directories:
                 if not is_idle(directory, config.watch.idle_minutes):
                     logger.debug("仍在写入，跳过：%s", directory)
                     continue
-                process_source_dir(config, directory, logger)
+                ready.append(directory)
 
-            # ---- 定期清理 ----
-            if time.time() - last_cleanup >= CLEANUP_INTERVAL:
+            # 只有确实有录制任务要开始时才清理旧录播，平时不再每小时空跑
+            if ready:
                 deleted = cleanup_archives(config, logger)
                 logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
-                last_cleanup = time.time()
+
+            for directory in ready:
+                process_source_dir(config, directory, logger)
 
             heartbeat_state["directories"] = len(directories)
             heartbeat_state["last_scan"] = now_text()

@@ -32,6 +32,7 @@ from pathlib import Path
 from .recorder import cookie_string_from_json
 
 ARCHIVE_LIST_URL = "https://member.bilibili.com/x/web/archives"
+PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
 
 # 手动查询时最多翻 30 页（1500 个稿件）
 DEFAULT_MAX_PAGES = 30
@@ -48,6 +49,8 @@ REVIEW_DELAYS = (600, 1800, 3600, 7200, 14400)
 REVIEW_MAX_HOURS = 24
 APPEND_REVIEW_MAX_HOURS = 48
 APPEND_REVIEW_GRACE = 86400
+# 月稿分P核对的最短重试间隔（秒）
+PAGE_CHECK_INTERVAL = 3600
 # 任务创建超过这么久还没有审核记录，就不再自动跟踪，避免翻旧账
 JOB_TRACK_MAX_AGE_HOURS = 72
 
@@ -453,6 +456,77 @@ def _save_review_updates(config, job) -> None:
         save_job(config.general.data_dir, latest)
 
 
+def fetch_page_count(cookies: Path, bvid: str) -> int | None:
+    """查询稿件的分P数量；网络或接口失败时返回 None。"""
+    try:
+        cookie = cookie_string_from_json(cookies)
+        request = urllib.request.Request(
+            f"{PAGELIST_URL}?bvid={bvid}",
+            headers={
+                "Cookie": cookie,
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.bilibili.com/",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    if data.get("code") != 0:
+        return None
+    pages = data.get("data") or []
+    return len(pages) if isinstance(pages, list) else None
+
+
+def verify_append_pages(
+    job, cookies: Path, bvid: str, logger=None, now: float | None = None
+) -> bool:
+    """月稿审核通过后核对分P是否真的增加了。
+
+    biliup 的“稿件修改成功”只代表接口接单，分P要等审核通过才出现在
+    pagelist 里。数量对不上时记 page_mismatch，让跟踪继续重试。
+    返回是否通过；无法核对时返回 True，避免误报。
+    """
+    now = time.time() if now is None else now
+    append = job.outputs.get("append") or {}
+    before = append.get("pages_before")
+    if before is None:
+        return True
+    expected = int(before) + len(append.get("done") or [])
+    if expected <= 0:
+        return True
+
+    record = dict(job.outputs.get("append_review") or {})
+    if record.get("pages") is not None and not record.get("page_mismatch"):
+        return True
+    checked = float(record.get("pages_checked_at") or 0)
+    if checked and now - checked < PAGE_CHECK_INTERVAL:
+        return not record.get("page_mismatch")
+
+    pages = fetch_page_count(cookies, bvid)
+    record["pages_checked_at"] = int(now)
+    if pages is None:
+        job.outputs["append_review"] = record
+        return True
+
+    record["pages"] = pages
+    record["pages_expected"] = expected
+    ok = pages >= expected
+    if not ok:
+        record["page_mismatch"] = True
+        if logger is not None:
+            logger.warning(
+                "月稿分P未增加：%s 期望 %s，实际 %s（可能追加失败或仍在处理）",
+                bvid,
+                expected,
+                pages,
+            )
+    else:
+        record.pop("page_mismatch", None)
+    job.outputs["append_review"] = record
+    return ok
+
+
 def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
     """刷新到期的审核状态，返回本轮检查的目标数。
 
@@ -576,7 +650,16 @@ def refresh_pending_reviews(config, logger=None, max_jobs: int = 0) -> int:
                     checked_at=_now_text(),
                 ).as_dict()
 
-            if state is not None and _is_final_review(job, key, state.kind, now):
+            if state is not None and state.kind == "published" and key == "append_review":
+                pages_ok = verify_append_pages(job, _cookies, bvid, logger, now)
+            else:
+                pages_ok = True
+
+            if (
+                state is not None
+                and _is_final_review(job, key, state.kind, now)
+                and pages_ok
+            ):
                 job.outputs[f"{key}_next_at"] = 0
             else:
                 _schedule(job, key, attempts, now)

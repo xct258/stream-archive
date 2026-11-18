@@ -806,22 +806,69 @@ def archive_dirs(
     )
 
 
+def protected_date_dirs(config: Config) -> dict[str, set[str]]:
+    """返回暂时不能删的“主播归档名 -> 日期目录”集合。
+
+    审核还没结论、被退回、步骤失败或修复未完成的任务，源文件可能还要用，
+    在 repair.max_age_days 天内先保留对应日期，避免清理把修复素材删掉。
+    """
+    limit_days = max(1, config.repair.max_age_days)
+    now = datetime.now()
+    result: dict[str, set[str]] = {}
+
+    for job in list_jobs(config.general.data_dir):
+        try:
+            created = datetime.strptime(job.created_at, "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            continue
+        if (now - created).days > limit_days:
+            continue
+
+        review = job.outputs.get("review") or {}
+        append_review = job.outputs.get("append_review") or {}
+        repair = job.outputs.get("repair") or {}
+        monthly_repair = job.outputs.get("monthly_repair") or {}
+
+        needs_files = has_failure(job)
+        # 审核中/被退回/状态未知，都先留着，等结论出来再清
+        if review and review.get("kind") not in ("published",):
+            needs_files = True
+        if append_review and append_review.get("kind") not in ("published",):
+            needs_files = True
+        for info in (repair, monthly_repair):
+            if info.get("status") in ("running", "failed", "pending"):
+                needs_files = True
+
+        if not needs_files:
+            continue
+        try:
+            date_key = date_parts(job.start_time)[3]
+        except Exception:
+            continue
+        result.setdefault(job.streamer, set()).add(date_key)
+
+    return result
+
+
 def cleanup_archives(config: Config, logger=None) -> int:
     """按自然日清理旧录播，返回删除的日期目录数量。
 
     保护措施：
         - 只处理严格的 YYYY-MM-DD 目录；
+        - 审核未定/失败/待修复的任务，对应日期在修复窗口内保留；
         - 每个主播最多删除 max_delete_per_run 个；
         - 删除后清理空目录，但不动 videos 根目录。
     """
     logger = logger or get_logger("stream_archive.pipeline")
     today = date.today()
     total = 0
+    protected = protected_date_dirs(config)
 
     for streamer in config.enabled_streamers():
         archive = streamer.archive
         if not archive.cleanup_enabled:
             continue
+        keep_dates = protected.get(streamer.name, set())
 
         # 保留 N 天含当天，所以截止日期是 today-(N-1)
         cutoff = today - timedelta(days=archive.retention_days - 1)
@@ -846,6 +893,9 @@ def cleanup_archives(config: Config, logger=None) -> int:
                 except ValueError:
                     continue
                 if directory_date >= cutoff:
+                    continue
+                if directory.name in keep_dates:
+                    logger.info("保留待处理任务的录播：%s", directory)
                     continue
 
                 if archive.keep_xml:

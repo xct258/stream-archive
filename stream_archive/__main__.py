@@ -126,13 +126,10 @@ def cmd_watch(config: Config, config_path: Path, logger) -> int:
                     continue
                 ready.append(directory)
 
-            # 只有确实有录制任务要开始时才清理旧录播，平时不再每小时空跑
-            if ready:
-                deleted = cleanup_archives(config, logger)
-                logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
-
+            # 清理在真正开始新任务时触发（见 process_source_dir），
+            # 空目录或无效录制不会反复清理。
             for directory in ready:
-                process_source_dir(config, directory, logger)
+                process_source_dir(config, directory, logger, cleanup_first=True)
 
             heartbeat_state["directories"] = len(directories)
             heartbeat_state["last_scan"] = now_text()

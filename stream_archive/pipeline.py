@@ -203,9 +203,17 @@ def _mtime_as_start_time(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def process_source_dir(config: Config, source_dir: Path, logger=None) -> bool:
+def process_source_dir(
+    config: Config,
+    source_dir: Path,
+    logger=None,
+    *,
+    cleanup_first: bool = False,
+) -> bool:
     """处理一个录制目录；已处理过或上次失败的会跳过。
 
+    cleanup_first=True 时，只在确实要开始一个新任务前清理一次旧录播，
+    避免空目录每轮都触发清理。
     这个函数给 watch/once 使用；手动重试请用 retry()。
     """
     logger = logger or get_logger("stream_archive.pipeline")
@@ -225,6 +233,12 @@ def process_source_dir(config: Config, source_dir: Path, logger=None) -> bool:
         job = existing
     else:
         save_job(config.general.data_dir, job)
+        if cleanup_first:
+            try:
+                deleted = cleanup_archives(config, logger)
+                logger.info("旧录播清理完成，删除 %s 个日期目录", deleted)
+            except Exception:
+                logger.exception("清理旧录播失败，继续处理任务")
 
     return process_job(config, job, logger)
 

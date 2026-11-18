@@ -18,6 +18,7 @@ from stream_archive.pipeline import (
     archive_dirs,
     cleanup_archives,
     find_streamer,
+    process_source_dir,
     step_duration_check,
     step_scan,
     upload_candidates,
@@ -224,6 +225,23 @@ class PipelineTest(unittest.TestCase):
         gap.assert_not_called()
 
     # ---- 旧录播清理 ----
+    def test_cleanup_only_when_new_job_starts(self) -> None:
+        directory = self.root / "rec" / "2026-11-13"
+        directory.mkdir(parents=True)
+        (directory / "录播姬_2026年11月13日19点56分57秒_标题_昵称A.mp4").write_bytes(b"x")
+
+        with mock.patch(
+            "stream_archive.pipeline.cleanup_archives", return_value=0
+        ) as cleanup, mock.patch(
+            "stream_archive.pipeline.process_job", return_value=True
+        ) as process:
+            process_source_dir(self.config, directory, LOGGER, cleanup_first=True)
+            # 第二天同一个目录（任务已存在）不应再次触发清理
+            process_source_dir(self.config, directory, LOGGER, cleanup_first=True)
+
+        cleanup.assert_called_once()
+        self.assertEqual(process.call_count, 2)
+
     def test_cleanup_keeps_unreviewed_job(self) -> None:
         base = self.root / "videos" / "主播A" / "原文件" / "2000" / "01" / "2000-01-01"
         base.mkdir(parents=True)

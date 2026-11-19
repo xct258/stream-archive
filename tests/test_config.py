@@ -63,6 +63,10 @@ id = "b"
 name = "主播B"
 aliases = ["昵称B"]
 enabled = false
+
+[streamers.archive]
+retention_mode = "count"
+retention_count = 3
 """
 
 
@@ -105,6 +109,10 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(a.danmaku.max_diff_seconds, 10)
         self.assertEqual(b.danmaku.max_diff_seconds, 25)
         self.assertEqual(a.archive.retention_days, 15)
+        self.assertEqual(a.archive.retention_mode, "days")
+        self.assertEqual(a.archive.retention_count, 10)
+        self.assertEqual(b.archive.retention_mode, "count")
+        self.assertEqual(b.archive.retention_count, 3)
         self.assertFalse(b.enabled)
 
         # 按月投稿：a 覆盖打开，b 继承全局默认（关闭）
@@ -160,3 +168,20 @@ class ConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_invalid_retention_mode(self) -> None:
+        text = self.path.read_text(encoding="utf-8").replace(
+            "retention_days = 15", 'retention_mode = "weeks"\nretention_days = 15'
+        )
+        self.path.write_text(text, encoding="utf-8")
+        with self.assertRaises(ConfigError):
+            load_config(self.path)
+
+    def test_invalid_retention_count(self) -> None:
+        text = self.path.read_text(encoding="utf-8").replace(
+            "retention_days = 15",
+            'retention_mode = "count"\nretention_count = 0',
+        )
+        self.path.write_text(text, encoding="utf-8")
+        with self.assertRaises(ConfigError):
+            load_config(self.path)

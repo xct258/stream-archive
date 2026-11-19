@@ -981,91 +981,143 @@ def protected_date_dirs(config: Config) -> dict[str, set[str]]:
     return result
 
 
-def cleanup_archives(config: Config, logger=None) -> int:
-    """按自然日清理旧录播，返回删除的日期目录数量。
+def cleanup_archives(config: Config, logger=None, dry_run: bool = False) -> int:
+    """清理旧录播，返回处理的日期目录数量。
+
+    两种模式（每个主播可单独配置）：
+        days  —— 保留最近 retention_days 个自然日（含当天）
+        count —— 保留最近 retention_count 个日期目录
 
     保护措施：
         - 只处理严格的 YYYY-MM-DD 目录；
+        - 同一天的压制版/原文件一起处理；
         - 审核未定/失败/待修复的任务，对应日期在修复窗口内保留；
-        - 每个主播最多删除 max_delete_per_run 个；
-        - 删除后清理空目录，但不动 videos 根目录。
+        - dry_run=True 时只记录将要删除的内容，不实际删除。
     """
     logger = logger or get_logger("stream_archive.pipeline")
     today = date.today()
     total = 0
     protected = protected_date_dirs(config)
+    kinds = ("压制版", "原文件")
 
     for streamer in config.enabled_streamers():
         archive = streamer.archive
         if not archive.cleanup_enabled:
             continue
         keep_dates = protected.get(streamer.name, set())
-
-        # 保留 N 天含当天，所以截止日期是 today-(N-1)
-        cutoff = today - timedelta(days=archive.retention_days - 1)
-        deleted = 0
         base = config.general.videos_dir / streamer.name
 
-        for kind in ("压制版", "原文件"):
+        # 同一天的两种目录归到一组，避免删一半
+        dirs_by_date: dict[date, list[Path]] = {}
+        for kind in kinds:
             kind_dir = base / kind
             if not kind_dir.is_dir():
                 continue
-
-            for directory in sorted(kind_dir.glob("*/*/*"), reverse=True):
-                if deleted >= archive.max_delete_per_run:
-                    logger.warning(
-                        "主播 %s 本次已删除 %s 个目录，达到上限，停止清理",
-                        streamer.id,
-                        archive.max_delete_per_run,
-                    )
-                    break
+            for directory in kind_dir.glob("*/*/*"):
+                if not directory.is_dir():
+                    continue
                 try:
                     directory_date = date.fromisoformat(directory.name)
                 except ValueError:
                     continue
-                if directory_date >= cutoff:
-                    continue
-                if directory.name in keep_dates:
-                    logger.info("保留待处理任务的录播：%s", directory)
-                    continue
+                dirs_by_date.setdefault(directory_date, []).append(directory)
 
-                if archive.keep_xml:
-                    removed = 0
-                    freed = 0
-                    for path in sorted(directory.iterdir()):
-                        if not path.is_file():
-                            continue
-                        if path.suffix.lower() == ".xml":
-                            continue
-                        try:
-                            freed += path.stat().st_size
-                            path.unlink()
-                            removed += 1
-                        except OSError as exc:
-                            logger.warning("删除文件失败：%s（%s）", path, exc)
-                    if removed == 0:
-                        continue
-                    logger.info(
-                        "清理旧录播（保留 XML）：%s（删除 %s 个文件，%s）",
-                        directory,
-                        removed,
-                        human_size(freed),
-                    )
-                    deleted += 1
-                    total += 1
-                else:
-                    size = _dir_size(directory)
-                    shutil.rmtree(directory)
-                    logger.info(
-                        "清理旧录播：%s（%s）", directory, human_size(size)
-                    )
-                    deleted += 1
-                    total += 1
+        if not dirs_by_date:
+            continue
 
-        _remove_empty_dirs(base)
+        dates = sorted(dirs_by_date, reverse=True)
+        if archive.retention_mode == "count":
+            candidates = dates[archive.retention_count :]
+            logger.info(
+                "清理模式=count：主播 %s 保留最近 %s 个日期目录，待处理 %s 个",
+                streamer.id,
+                archive.retention_count,
+                len(candidates),
+            )
+        else:
+            cutoff = today - timedelta(days=archive.retention_days - 1)
+            candidates = [item for item in dates if item < cutoff]
+            logger.info(
+                "清理模式=days：主播 %s 保留 %s 天（%s 之前删除），待处理 %s 个",
+                streamer.id,
+                archive.retention_days,
+                cutoff.isoformat(),
+                len(candidates),
+            )
 
-    _remove_empty_dirs(config.general.work_dir)
+        for directory_date in candidates:
+            name = directory_date.isoformat()
+            if name in keep_dates:
+                logger.info("保留待处理任务的录播：%s/%s", base, name)
+                continue
+            removed = False
+            for directory in dirs_by_date[directory_date]:
+                if _cleanup_directory(
+                    directory, archive.keep_xml, logger, dry_run
+                ):
+                    removed = True
+            if removed:
+                total += 1
+
+        if not dry_run:
+            _remove_empty_dirs(base)
+
+    if not dry_run:
+        _remove_empty_dirs(config.general.work_dir)
     return total
+
+
+def _cleanup_directory(
+    directory: Path, keep_xml: bool, logger, dry_run: bool
+) -> bool:
+    """删除一个日期目录里的内容；返回是否真的有可删内容。"""
+    if not directory.is_dir():
+        return False
+
+    if keep_xml:
+        targets = [
+            path
+            for path in sorted(directory.iterdir())
+            if path.is_file() and path.suffix.lower() != ".xml"
+        ]
+        if not targets:
+            return False
+        freed = sum(path.stat().st_size for path in targets)
+        if dry_run:
+            logger.info(
+                "[dry-run] 清理旧录播（保留 XML）：%s（%s 个文件，%s）",
+                directory,
+                len(targets),
+                human_size(freed),
+            )
+            return True
+
+        removed = 0
+        freed = 0
+        for path in targets:
+            try:
+                freed += path.stat().st_size
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning("删除文件失败：%s（%s）", path, exc)
+        if removed == 0:
+            return False
+        logger.info(
+            "清理旧录播（保留 XML）：%s（删除 %s 个文件，%s）",
+            directory,
+            removed,
+            human_size(freed),
+        )
+        return True
+
+    size = _dir_size(directory)
+    if dry_run:
+        logger.info("[dry-run] 清理旧录播：%s（%s）", directory, human_size(size))
+        return True
+    shutil.rmtree(directory)
+    logger.info("清理旧录播：%s（%s）", directory, human_size(size))
+    return True
 
 
 def _dir_size(directory: Path) -> int:

@@ -391,9 +391,12 @@ def cmd_retry(config: Config, job_id: str, logger) -> int:
     return 0 if retry(config, job_id, logger) else 1
 
 
-def cmd_cleanup(config: Config, logger) -> int:
-    deleted = cleanup_archives(config, logger)
-    logger.info("清理完成，删除 %s 个日期目录", deleted)
+def cmd_cleanup(config: Config, logger, dry_run: bool = False) -> int:
+    deleted = cleanup_archives(config, logger, dry_run=dry_run)
+    if dry_run:
+        logger.info("dry-run 完成，预计清理 %s 个日期目录", deleted)
+    else:
+        logger.info("清理完成，删除 %s 个日期目录", deleted)
     return 0
 
 
@@ -600,7 +603,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     retry_parser.add_argument("job_id", help="任务 id")
 
-    subparsers.add_parser("cleanup", parents=[common], help="按保留天数清理旧录播")
+    cleanup_parser = subparsers.add_parser(
+        "cleanup", parents=[common], help="按保留策略清理旧录播"
+    )
+    cleanup_parser.add_argument(
+        "--dry-run", action="store_true", help="只打印将删除的内容，不实际删除"
+    )
     subparsers.add_parser("sync", parents=[common], help="同步 cookies 和录播姬房间配置")
     subparsers.add_parser("check", parents=[common], help="部署前自检")
 
@@ -648,7 +656,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "retry":
         return cmd_retry(config, args.job_id, logger)
     if args.command == "cleanup":
-        return cmd_cleanup(config, logger)
+        return cmd_cleanup(config, logger, dry_run=args.dry_run)
     if args.command == "sync":
         return cmd_sync(config, logger)
     if args.command == "check":

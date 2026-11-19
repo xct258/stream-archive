@@ -1,6 +1,6 @@
 # stream-archive
 
-通用直播录播处理工具：**录制监控 → 碎片清理 → FLV→MP4 → 弹幕压制 → B 站投稿 → 按月合集 → 归档 → 弹幕上云 → 按天清理**，附带一个只读监控界面。
+通用直播录播处理工具：**录制监控 → 碎片清理 → FLV→MP4 → 弹幕压制 → B 站投稿 → 按月合集 → 归档 → 弹幕上云 → 按天/按数量清理**，附带一个只读监控界面。
 
 - **通用多主播**：主播、房间号、投稿账号、标题/简介模板全部在 `config.toml` 里配置，代码里不出现具体主播；
 - **可恢复**：每场录播拆成 11 个幂等步骤，状态写入 JSON，失败后可以断点重试；
@@ -230,12 +230,33 @@ watcher 不再每小时空跑清理，而是在**发现新的录制任务要处�
 （也可以随时手动执行 `cleanup` 命令）。
 
 - 只处理 `videos/<主播>/{压制版,原文件}` 下严格的 `YYYY-MM-DD` 目录；
-- `retention_days` 含当天：`2` 表示保留今天和昨天；
+- 两种保留模式，按主播独立配置：
+  - `retention_mode = "days"`：`retention_days` 含当天，`2` 表示保留今天和昨天；
+  - `retention_mode = "count"`：保留最近 `retention_count` 个日期目录，同一天算一个；
+- 同一天的压制版和原文件一起保留或一起清理；
 - `keep_xml = true` 时只删视频/封面/字幕，保留弹幕 XML；
-- 每个主播单次最多删 `max_delete_per_run` 个日期目录；
+- 不再限制单次删除数量；`cleanup --dry-run` 可以只预览将要删除的目录；
 - 审核未定、被退回、步骤失败或修复未完成的任务，对应日期在
   `repair.max_age_days` 天内不会被清理，避免修复素材被提前删掉；
 - `data/repair/` 下的修复稿不参与自动清理。
+
+按数量保留示例：
+
+```toml
+[archive]
+retention_mode = "count"
+retention_count = 10
+
+# 单个主播覆盖
+[[streamers]]
+id = "demo"
+name = "主播A"
+room_id = 123456
+
+[streamers.archive]
+retention_mode = "count"
+retention_count = 5
+```
 
 ## 投稿审核状态
 
@@ -346,6 +367,7 @@ stream-archive --config /data/config.toml once --dir /data/rec/主播/2026-11-14
 stream-archive --config /data/config.toml status
 stream-archive --config /data/config.toml retry <任务号>
 stream-archive --config /data/config.toml cleanup
+stream-archive --config /data/config.toml cleanup --dry-run
 stream-archive --config /data/config.toml sync
 stream-archive --config /data/config.toml check
 stream-archive --config /data/config.toml review --bvid BV1xx411c7mD

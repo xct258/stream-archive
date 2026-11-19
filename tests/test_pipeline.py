@@ -319,6 +319,73 @@ class PipelineTest(unittest.TestCase):
         self.assertFalse((base / "old.mp4").exists())
         self.assertTrue((base / "old.xml").exists())
 
+    def test_cleanup_count_mode(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        streamer.archive.retention_mode = "count"
+        streamer.archive.retention_count = 2
+
+        dates = ["2000-01-01", "2000-01-02", "2000-01-03", "2000-01-04"]
+        for text in dates:
+            for kind in ("压制版", "原文件"):
+                directory = (
+                    self.root / "videos" / "主播A" / kind / "2000" / "01" / text
+                )
+                directory.mkdir(parents=True)
+                (directory / "f.mp4").write_bytes(b"x")
+
+        deleted = cleanup_archives(self.config, LOGGER)
+        self.assertEqual(deleted, 2)
+
+        for text in dates[:2]:
+            for kind in ("压制版", "原文件"):
+                directory = (
+                    self.root / "videos" / "主播A" / kind / "2000" / "01" / text
+                )
+                self.assertFalse(directory.exists())
+        for text in dates[2:]:
+            for kind in ("压制版", "原文件"):
+                directory = (
+                    self.root / "videos" / "主播A" / kind / "2000" / "01" / text
+                )
+                self.assertTrue(directory.exists())
+
+    def test_cleanup_dry_run_keeps_files(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        streamer.archive.retention_mode = "count"
+        streamer.archive.retention_count = 1
+
+        old = self.root / "videos" / "主播A" / "原文件" / "2000" / "01" / "2000-01-01"
+        new = self.root / "videos" / "主播A" / "原文件" / "2000" / "01" / "2000-01-02"
+        for directory in (old, new):
+            directory.mkdir(parents=True)
+            (directory / "f.mp4").write_bytes(b"x")
+
+        deleted = cleanup_archives(self.config, LOGGER, dry_run=True)
+        self.assertEqual(deleted, 1)
+        self.assertTrue(old.exists())
+        self.assertTrue(new.exists())
+        self.assertTrue((old / "f.mp4").exists())
+
+    def test_cleanup_has_no_per_run_limit(self) -> None:
+        # 默认 days 模式：超过 8 个旧日期也要一次清完
+        for day in range(1, 13):
+            directory = (
+                self.root
+                / "videos"
+                / "主播A"
+                / "原文件"
+                / "2000"
+                / "01"
+                / f"2000-01-{day:02d}"
+            )
+            directory.mkdir(parents=True)
+            (directory / "f.mp4").write_bytes(b"x")
+
+        deleted = cleanup_archives(self.config, LOGGER)
+        self.assertEqual(deleted, 12)
+
     def test_cleanup_archives(self) -> None:
         streamer = self.config.streamer_by_id("a")
         assert streamer is not None

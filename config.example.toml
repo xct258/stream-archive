@@ -138,11 +138,16 @@ desc_template = """录制平台：{platform}
 # 是否按自然日清理旧录播
 cleanup_enabled = true
 
-# 保留天数（含当天）
+# 清理模式：
+#   days  = 按自然日保留
+#   count = 按日期目录数量保留
+retention_mode = "days"
+
+# days 模式：保留天数（含当天）
 retention_days = 15
 
-# 单次清理最多删几个日期目录，防止配置写错一次删光
-max_delete_per_run = 8
+# count 模式：每个主播保留最近多少个日期目录（同一天算一个）
+retention_count = 10
 
 # 投稿成功后是否立即删除本地“压制版 + 原文件”
 # 默认 false：本地保留一份，确认 B 站稿件正常后再手动清理。

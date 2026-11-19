@@ -102,8 +102,11 @@ class UploadConfig:
 @dataclass
 class ArchiveConfig:
     cleanup_enabled: bool = True
+    # days = 按自然日保留；count = 按日期目录数量保留
+    retention_mode: str = "days"
     retention_days: int = 15
-    max_delete_per_run: int = 8
+    # 仅 cleanup_mode=count 生效：每个主播保留最近多少个日期目录
+    retention_count: int = 10
     delete_after_upload: bool = False
     # 清理旧录播时只删除视频/封面等，保留 XML 弹幕
     keep_xml: bool = False
@@ -355,10 +358,14 @@ def _validate_encode(config: EncodeConfig, owner: str) -> None:
 
 
 def _validate_archive(config: ArchiveConfig, owner: str) -> None:
+    if config.retention_mode not in ("days", "count"):
+        raise ConfigError(
+            f"{owner}.archive.retention_mode 只能是 days 或 count"
+        )
     if config.retention_days < 1:
         raise ConfigError(f"{owner}.archive.retention_days 至少为 1")
-    if config.max_delete_per_run < 1:
-        raise ConfigError(f"{owner}.archive.max_delete_per_run 至少为 1")
+    if config.retention_count < 1:
+        raise ConfigError(f"{owner}.archive.retention_count 至少为 1")
 
 
 def _validate_append(config: AppendConfig, owner: str) -> None:
@@ -536,8 +543,9 @@ def _parse_upload(section: dict[str, Any], label: str) -> UploadConfig:
 def _parse_archive(section: dict[str, Any], label: str) -> ArchiveConfig:
     return ArchiveConfig(
         cleanup_enabled=_get_bool(section, label, "cleanup_enabled", True),
+        retention_mode=_get_str(section, label, "retention_mode", "days").strip().lower(),
         retention_days=_get_int(section, label, "retention_days", 15),
-        max_delete_per_run=_get_int(section, label, "max_delete_per_run", 8),
+        retention_count=_get_int(section, label, "retention_count", 10),
         delete_after_upload=_get_bool(section, label, "delete_after_upload", False),
         keep_xml=_get_bool(section, label, "keep_xml", False),
     )

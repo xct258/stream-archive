@@ -199,6 +199,21 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(job.outputs["pairs"][0]["ok"])
         self.assertEqual(job.outputs["pairs"][0]["trailing"], 36.8)
 
+    def test_duration_check_allows_video_longer_than_danmaku(self) -> None:
+        streamer = self.config.streamer_by_id("a")
+        assert streamer is not None
+        job = self._duration_job()
+
+        with mock.patch("stream_archive.pipeline.duration_diff", return_value=26.8), \
+             mock.patch("stream_archive.pipeline.max_packet_gap") as gap:
+            detail, skipped = step_duration_check(self.config, streamer, job, LOGGER)
+
+        self.assertFalse(skipped)
+        self.assertEqual(detail, "1/1 个视频通过时长校验")
+        self.assertTrue(job.outputs["pairs"][0]["ok"])
+        self.assertEqual(job.outputs["pairs"][0]["leading"], 26.8)
+        gap.assert_not_called()
+
     def test_duration_check_rejects_internal_gap(self) -> None:
         streamer = self.config.streamer_by_id("a")
         assert streamer is not None

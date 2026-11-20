@@ -54,9 +54,11 @@ from .webdav import step_upload_danmaku
 # 小于这个大小的视频视为录制碎片，整组（视频+XML）删除
 SMALL_FILE_BYTES = 10 * 1024 * 1024
 
-# 录播姬分段切换时，旧文件的弹幕可能比视频多出几十秒。
-# 这个范围内的“视频更短”先做断流检测，不直接判失败。
-TRAILING_DANMAKU_TOLERANCE = 300.0
+# 录播姬分段切换时，视频和弹幕的尾部可能相差几十秒：
+#   - 弹幕比视频长：旧文件弹幕写到切换那一刻，视频先停；
+#   - 视频比弹幕长：弹幕先停，视频多出无弹幕的尾部。
+# 这个范围内的差值不直接判失败：弹幕时间轴仍然对齐，只是尾部缺一段。
+TAIL_DANMAKU_TOLERANCE = 300.0
 
 # 相邻视频包 PTS 超过这个间隔，视为录制中间断流（弹幕会错位）。
 GAP_TOLERANCE = 1.0
@@ -567,7 +569,7 @@ def step_duration_check(
                 limit = streamer.danmaku.max_diff_seconds
                 if abs(diff) <= limit:
                     entry["ok"] = True
-                elif diff < 0 and -diff <= TRAILING_DANMAKU_TOLERANCE:
+                elif diff < 0 and -diff <= TAIL_DANMAKU_TOLERANCE:
                     try:
                         gap = max_packet_gap(video, stop_at=GAP_TOLERANCE)
                     except Exception as exc:
@@ -583,6 +585,15 @@ def step_duration_check(
                             )
                         else:
                             entry["reason"] = f"视频中间断流 {gap:.1f}s，弹幕会错位"
+                elif diff > 0 and diff <= TAIL_DANMAKU_TOLERANCE:
+                    # 弹幕先结束：尾部没有弹幕，但前面的时间轴是对齐的
+                    entry["ok"] = True
+                    entry["leading"] = round(diff, 1)
+                    logger.info(
+                        "视频比弹幕长 %.1fs，尾部无弹幕但时间轴对齐，按正常压制：%s",
+                        diff,
+                        video.name,
+                    )
                 else:
                     entry["reason"] = (
                         f"时间差 {diff:+.1f}s 超过 {limit}s"

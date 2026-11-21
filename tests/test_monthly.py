@@ -162,6 +162,9 @@ class MonthlyTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("upload", calls[0])
         self.assertIn("append --vid BV1AAAAAAAAA", calls[1])
+        # 分P名称沿用旧逻辑：时间戳，第二批起带 _1 后缀
+        self.assertIn("2026年11月14日12点00分00秒.mp4", calls[0])
+        self.assertIn("2026年11月14日12点00分00秒_1.mp4", calls[1])
 
         # 映射文件已落盘
         mapping = load_vid_map(self.map_file)
@@ -196,6 +199,25 @@ class MonthlyTest(unittest.TestCase):
         calls = self.marker.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(calls), 1)
         self.assertIn("append --vid BV1AAAAAAAAA", calls[0])
+        self.assertIn("2026年11月20日20点00分00秒.mp4", calls[0])
+
+    def test_append_uses_filename_timestamp_and_keeps_original(self) -> None:
+        save_vid_map(
+            self.map_file,
+            {map_key("演示主播", "2026-11"): "BV1AAAAAAAAA"},
+        )
+        name = "录播姬_2026年11月20日19点59分13秒_测试标题_演示主播.mp4"
+        job = self._job("demo-ts", "2026年11月20日19点00分00秒", [name])
+
+        with patch.dict(os.environ, self.env):
+            step_append_monthly(self.config, self.streamer, job)
+
+        calls = self.marker.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(calls), 1)
+        self.assertIn("2026年11月20日19点59分13秒.mp4", calls[0])
+        work_dir = Path(job.work_dir)
+        self.assertTrue((work_dir / name).is_file())
+        self.assertFalse((work_dir / "2026年11月20日19点59分13秒.mp4").exists())
 
     def test_disabled_is_skipped(self) -> None:
         self.streamer.append.enabled = False

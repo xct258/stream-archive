@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
 import time
 from pathlib import Path
 
@@ -23,6 +26,37 @@ from .review import fetch_page_count
 from .state import Job, date_parts, save_job
 from .upload import append, extract_bvid, list_recent_vid, upload
 from .util import atomic_write_text, ensure_dir
+
+# 分P名称沿用旧项目逻辑：优先用文件名里的“2026年11月20日19点59分13秒”，
+# 同一批里第 2 个起追加 _1、_2 后缀。
+PART_TIME_PATTERN = re.compile(
+    r"\d{4}年\d{2}月\d{2}日\d{2}点\d{2}分\d{2}秒"
+)
+
+
+def part_title(file: Path, position: int, fallback: str) -> str:
+    match = PART_TIME_PATTERN.search(file.name)
+    stamp = match.group(0) if match else fallback
+    return stamp if position == 0 else f"{stamp}_{position}"
+
+
+def make_part_link(
+    file: Path, position: int, fallback: str, used: set[str]
+) -> Path:
+    """用硬链接生成一个“分P名称”路径，不改变原文件。"""
+    base = part_title(file, position, fallback)
+    candidate = file.parent / f"{base}{file.suffix}"
+    suffix = 1
+    while candidate.exists() or candidate.name in used:
+        suffix += 1
+        candidate = file.parent / f"{base}_{suffix}{file.suffix}"
+    try:
+        os.link(file, candidate)
+    except OSError:
+        # 极少数文件系统不支持硬链接时退回复制
+        shutil.copy2(file, candidate)
+    used.add(candidate.name)
+    return candidate
 from .webdav import month_public_url
 
 
@@ -183,6 +217,7 @@ def step_append_monthly(
                 info["pages_before"] = pages
                 save_job(config.general.data_dir, job)
 
+    used: set[str] = set()
     created = False
     if not vid:
         # ---- 当月第一场：新建月稿件，首个视频就是 P1 ----
@@ -197,13 +232,18 @@ def step_append_monthly(
         cover = Path(append_config.cover) if append_config.cover else None
 
         logger.info("按月投稿：%s 尚无稿件，用 %s 新建：%s", month, first.name, title)
-        result = upload(
-            streamer.upload,
-            [first],
-            title=title,
-            description=description,
-            cover=cover,
-        )
+        first_link = make_part_link(first, 0, job.start_time, used)
+        logger.info("分P命名：%s -> %s", first.name, first_link.name)
+        try:
+            result = upload(
+                streamer.upload,
+                [first_link],
+                title=title,
+                description=description,
+                cover=cover,
+            )
+        finally:
+            first_link.unlink(missing_ok=True)
         if not result.ok:
             raise RuntimeError(f"新建月稿件失败：{result.detail[-300:]}")
 
@@ -235,8 +275,14 @@ def step_append_monthly(
         pending = pending[1:]
 
     # ---- 其余文件逐个追加；每成功一个就落盘，重试不重复 ----
+    position = len(done)
     for file in pending:
-        result = append(streamer.upload, vid, file)
+        link = make_part_link(file, position, job.start_time, used)
+        logger.info("分P命名：%s -> %s", file.name, link.name)
+        try:
+            result = append(streamer.upload, vid, link)
+        finally:
+            link.unlink(missing_ok=True)
         if not result.ok:
             raise RuntimeError(f"追加分P失败：{file.name}：{result.detail[-300:]}")
         info["done"].append(file.name)
@@ -247,6 +293,7 @@ def step_append_monthly(
                 on_progress(len(done), len(files), file.name)
             except Exception:
                 pass
+        position += 1
 
     # 记录追加完成时间：审核观察期从这里开始算，而不是任务创建时间
     info["finished_at"] = int(time.time())

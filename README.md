@@ -30,7 +30,7 @@
 | `encode` | XML→ASS，ffmpeg 烧弹幕；有核显先试 QSV，失败回退 x264；可选高能进度条 |
 | `cover` | 弹幕峰值处抽帧，自动避开过暗/过曝画面 |
 | `upload` | biliup 投稿，自动标题、简介、封面、标签 |
-| `append_monthly` | 同一主播同月的视频归到一个月稿件（首场新建，后续追加分P） |
+| `append_monthly` | 同一主播同月的视频归到一个月稿件（首场新建，后续追加分P）；用原文件，排在压制前，月稿更早上线 |
 | `archive` | 压制版 / 原文件按 `主播/年/月/日` 归档 |
 | `transcribe` | 从原视频抽音频，启动本地 ASR worker 生成 txt/srt |
 | `upload_danmaku` | XML 弹幕上传 WebDAV |

@@ -1,7 +1,8 @@
 """处理流水线：从录制目录到 B 站稿件。
 
-一场录播被拆成 8 个幂等步骤，每步完成后写状态文件：
-    scan -> remux -> duration_check -> encode -> cover -> upload -> archive -> cleanup_after
+一场录播被拆成多个幂等步骤，每步完成后写状态文件：
+    scan -> remux -> duration_check -> append_monthly -> encode -> cover -> upload
+         -> archive -> cleanup_after
 
 设计原则：
     - 任一步失败立即停止，状态里能看出失败在哪一步；

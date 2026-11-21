@@ -30,10 +30,11 @@ STEPS = (
     "scan",
     "remux",
     "duration_check",
+    # 月稿用原文件追加，和压制无关；放在压制前，月稿能早几小时上线
+    "append_monthly",
     "encode",
     "cover",
     "upload",
-    "append_monthly",
     "archive",
     "transcribe",
     "upload_danmaku",

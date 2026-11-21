@@ -311,8 +311,19 @@ const DashboardView = {
         job.stream_title || "";
     }
 
+    function recordStatusText(item) {
+      if (item.age_seconds == null) return "还没有写入";
+      if (item.status === "recording") {
+        const total = fmtDuration(item.idle_seconds || 0);
+        const left = item.remaining_seconds;
+        if (left == null) return `静默 ${fmtDuration(item.age_seconds)}`;
+        return `静默 ${fmtDuration(item.age_seconds)} / ${total}，${fmtDuration(left)} 后处理`;
+      }
+      return `静默 ${fmtDuration(item.age_seconds)}，等待处理`;
+    }
+
     return {
-      data, error, active, recordings, stepPercent, stepDetail,
+      data, error, active, recordings, stepPercent, stepDetail, recordStatusText,
       openJob: (id) => emit("open", id),
       stepLabel, videoUrl,
     };
@@ -396,18 +407,20 @@ const DashboardView = {
         <div class="section-head"><h2>录制目录</h2></div>
         <div class="table-wrap" v-if="recordings.length">
           <table>
-            <thead><tr><th>目录</th><th class="nw">视频 / 文件</th><th class="nw">大小</th><th class="nw">最后写入</th><th class="nw">静默</th><th class="nw">状态</th></tr></thead>
+            <thead><tr><th>目录</th><th class="nw">视频 / 文件</th><th class="nw">大小</th><th class="nw">最后写入</th><th class="nw">状态</th></tr></thead>
             <tbody>
               <tr v-for="item in recordings" :key="item.path">
                 <td class="small" style="word-break:break-all">{{ item.path }}</td>
                 <td class="nw">{{ item.videos }} / {{ item.files }}</td>
                 <td class="nw">{{ $bytes(item.size) }}</td>
                 <td class="nw small muted">{{ item.last_write || "-" }}</td>
-                <td class="nw small muted">{{ item.age_seconds == null ? "-" : $dur(item.age_seconds) }}</td>
                 <td class="nw">
-                  <span class="badge" :class="item.status === 'recording' ? 'running' : 'pending'">
-                    {{ item.status === "recording" ? "录制中" : "已静默" }}
-                  </span>
+                  <div class="rec-status">
+                    <span class="badge" :class="item.status === 'recording' ? 'running' : 'pending'">
+                      {{ item.status === "recording" ? "录制中" : "已静默" }}
+                    </span>
+                    <span class="small muted">{{ recordStatusText(item) }}</span>
+                  </div>
                 </td>
               </tr>
             </tbody>

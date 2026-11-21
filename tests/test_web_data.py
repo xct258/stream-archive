@@ -278,10 +278,14 @@ class WebDataTest(unittest.TestCase):
         recordings = scan_recordings(self.config)
         self.assertEqual(len(recordings), 1)
         self.assertEqual(recordings[0]["status"], "idle")
+        self.assertEqual(recordings[0]["idle_seconds"], 1200)
+        self.assertEqual(recordings[0]["remaining_seconds"], 0)
 
         os.utime(video, (time.time(), time.time()))
         recordings = scan_recordings(self.config)
         self.assertEqual(recordings[0]["status"], "recording")
+        self.assertEqual(recordings[0]["idle_seconds"], 1200)
+        self.assertGreater(recordings[0]["remaining_seconds"], 0)
 
     # ---- 日志 ----
     def test_tail_text(self) -> None:

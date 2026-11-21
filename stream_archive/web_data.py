@@ -289,6 +289,7 @@ def scan_recordings(config: Config) -> list[dict]:
     seen: set[Path] = set()
     result: list[dict] = []
     now = time.time()
+    idle_seconds = max(1, int(config.watch.idle_minutes * 60))
 
     for root in roots:
         if not root.is_dir():
@@ -332,6 +333,11 @@ def scan_recordings(config: Config) -> list[dict]:
                         else ""
                     ),
                     "age_seconds": age,
+                    # 静默阈值与剩余时间，前端合并到“状态”里显示
+                    "idle_seconds": idle_seconds,
+                    "remaining_seconds": (
+                        max(0, idle_seconds - age) if age is not None else None
+                    ),
                     "status": "idle" if idle else "recording",
                 }
             )

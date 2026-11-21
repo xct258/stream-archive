@@ -213,6 +213,8 @@ td.nw, th.nw { white-space: nowrap; }
 .step-line .name { color: var(--text); }
 .step-cell .progress { min-width: 120px; }
 
+.rec-status { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+
 .empty { padding: 28px; text-align: center; color: var(--muted); }
 
 /* ---------------- 工具栏 ---------------- */
